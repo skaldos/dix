@@ -63,11 +63,9 @@ def _interface_path(interface_id: str) -> Path:
 
 
 def _read_interface_title(path: Path) -> str:
-    import tomllib
+    from .registry import load_interface
 
-    data = tomllib.loads(path.read_text())
-    iface = data.get("interface", {}) if isinstance(data, dict) else {}
-    return str(iface.get("title") or path.stem)
+    return load_interface(path).interface.title
 
 
 def cmd_interface(args: argparse.Namespace) -> int:
@@ -122,8 +120,9 @@ def cmd_interface(args: argparse.Namespace) -> int:
 
 def cmd_component(args: argparse.Namespace) -> int:
     if args.component_cmd == "list":
-        # DX-001 stub; DX-002 replaces this with the real registry.
-        _json_print([{"id": "input"}, {"id": "select"}])
+        from .registry import component_definitions
+
+        _json_print([definition.model_dump() for definition in component_definitions()])
         return 0
     raise SystemExit(f"unknown component command: {args.component_cmd}")
 
