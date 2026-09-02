@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from dix.elements.value import ValueState
 from dix.models import ComponentDefinition, ComponentRuntime, ComponentSpec
 
@@ -23,4 +25,18 @@ class InputComponent(Component):
             use=spec.use,
             state={"value": state.model_dump()},
             output={"value": state.value, "valid": state.valid},
+        )
+
+    def update_runtime(
+        self, spec: ComponentSpec, runtime: ComponentRuntime, data: dict[str, Any]
+    ) -> ComponentRuntime:
+        state = ValueState.model_validate(runtime.state["value"]).set(data.get("value"))
+        required = bool(spec.config.get("required", False))
+        if required and (state.value is None or state.value == ""):
+            state = state.model_copy(update={"valid": False, "error": "value is required"})
+        return runtime.model_copy(
+            update={
+                "state": {"value": state.model_dump()},
+                "output": {"value": state.value, "valid": state.valid},
+            }
         )

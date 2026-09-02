@@ -47,3 +47,41 @@ class SelectComponent(Component):
             state={"list": list_state.model_dump(), "selection": selection_state.model_dump()},
             output={"selected": selection_state.selected, "selected_items": []},
         )
+
+    def update_runtime(
+        self, spec: ComponentSpec, runtime: ComponentRuntime, data: dict[str, Any]
+    ) -> ComponentRuntime:
+        list_state = ListState.model_validate(runtime.state["list"])
+        selection_state = SelectionState.model_validate(runtime.state["selection"])
+        selected = data.get("selected")
+        if selection_state.mode == "multi":
+            if selected is None:
+                values: list[str] = []
+            elif isinstance(selected, list):
+                values = [str(item) for item in selected]
+            else:
+                values = [str(selected)]
+            selection_state = selection_state.model_copy(update={"selected": sorted(set(values))})
+        else:
+            if isinstance(selected, list):
+                selected = selected[0] if selected else None
+            selection_state = selection_state.model_copy(update={"selected": None if selected in (None, "") else str(selected)})
+
+        selected_values = (
+            selection_state.selected
+            if isinstance(selection_state.selected, list)
+            else ([] if selection_state.selected is None else [selection_state.selected])
+        )
+        selected_items = [item for item in list_state.items if str(item.get("id")) in selected_values]
+        return runtime.model_copy(
+            update={
+                "state": {
+                    "list": list_state.model_dump(),
+                    "selection": selection_state.model_dump(),
+                },
+                "output": {
+                    "selected": selection_state.selected,
+                    "selected_items": selected_items,
+                },
+            }
+        )

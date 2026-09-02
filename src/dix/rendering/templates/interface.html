@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% set title = runtime.spec.interface.title %}
+{% block body %}
+  <h1>{{ runtime.spec.interface.title }}</h1>
+  {% if runtime.spec.interface.description %}<p>{{ runtime.spec.interface.description }}</p>{% endif %}
+
+  {% for spec in runtime.spec.components %}
+    <div id="component-{{ spec.id }}">
+      {% include "components/" ~ spec.use ~ ".html" with context %}
+    </div>
+  {% endfor %}
+
+  <h2>Runtime model</h2>
+  <pre id="runtime-model">{{ model.model_dump() | tojson(indent=2) }}</pre>
+{% endblock %}

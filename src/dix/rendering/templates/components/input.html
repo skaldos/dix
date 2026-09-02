@@ -1,0 +1,17 @@
+{% set state = runtime.components[spec.id if spec is defined else component_id].state if component_state is not defined else {"value": component_state["value"]} %}
+{% set output = runtime.components[spec.id if spec is defined else component_id].output if component_output is not defined else component_output %}
+{% set cfg = (spec.config if spec is defined else component_spec.config) %}
+{% set cid = spec.id if spec is defined else component_id %}
+<div class="dix-component" data-component="{{ cid }}" data-use="input">
+  <label for="{{ cid }}">{{ cfg.get("label", cid) }}</label>
+  <input
+    id="{{ cid }}"
+    name="value"
+    value="{{ output.get('value') or '' }}"
+    placeholder="{{ cfg.get('placeholder', '') }}"
+    hx-post="/api/interfaces/{{ runtime.spec.interface.id }}/components/{{ cid }}/update"
+    hx-trigger="change"
+    hx-target="#component-{{ cid }}"
+    hx-swap="outerHTML"
+  >
+</div>
