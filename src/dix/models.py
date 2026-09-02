@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 AccessMode = Literal["public", "authenticated", "disabled", "session_match"]
 SelectionMode = Literal["single", "multi"]
+InteractionRole = Literal["value_input", "choice_input", "trigger", "message", "group"]
 
 
 class AccessSpec(BaseModel):
@@ -102,6 +103,15 @@ class ElementContract(BaseModel):
     events: list[str]
 
 
+class InteractionContract(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: InteractionRole
+    capabilities: list[str]
+    state_fields: list[str]
+    output_fields: list[str]
+
+
 class ComponentDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -109,6 +119,51 @@ class ComponentDefinition(BaseModel):
     description: str
     elements: list[str]
     outputs: list[str]
+    interaction: InteractionContract
+
+
+class InteractionModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: InteractionRole
+    capabilities: list[str]
+    state_fields: list[str]
+    output_fields: list[str]
+
+
+class ComponentModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    use: str
+    config: dict[str, Any]
+    interaction: InteractionModel
+    state: dict[str, Any]
+    output: dict[str, Any]
+
+
+class ComponentRenderModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    use: str
+    config: dict[str, Any]
+    interaction: InteractionModel
+    state: dict[str, Any]
+    output: dict[str, Any]
+    update_url: str
+
+
+class InterfaceRenderModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interface_id: str
+    title: str
+    description: str | None = None
+    session: Session
+    components: list[ComponentRenderModel]
+    model_url: str
+    events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ComponentRuntime(BaseModel):

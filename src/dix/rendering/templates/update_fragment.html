@@ -1,0 +1,4 @@
+<div id="component-{{ component.id }}">
+  {% include "interactions/" ~ component.interaction.role ~ ".html" %}
+</div>
+<pre id="runtime-model" hx-swap-oob="true">{{ model.model_dump() | tojson(indent=2) }}</pre>

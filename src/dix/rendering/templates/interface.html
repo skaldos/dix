@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% set title = runtime.spec.interface.title %}
 {% block body %}
-  <h1>{{ runtime.spec.interface.title }}</h1>
-  {% if runtime.spec.interface.description %}<p>{{ runtime.spec.interface.description }}</p>{% endif %}
+  <h1>{{ model.title }}</h1>
+  {% if model.description %}<p>{{ model.description }}</p>{% endif %}
 
-  {% for spec in runtime.spec.components %}
-    <div id="component-{{ spec.id }}">
-      {% include "components/" ~ spec.use ~ ".html" with context %}
+  {% for component in model.components %}
+    <div id="component-{{ component.id }}">
+      {% include "interactions/" ~ component.interaction.role ~ ".html" %}
     </div>
   {% endfor %}
 

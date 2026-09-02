@@ -4,8 +4,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from dix.models import ComponentSpec
-from dix.runtime import InterfaceRuntime
+from dix.models import ComponentRenderModel, InterfaceRenderModel
 
 
 class HtmlRenderer:
@@ -16,20 +15,16 @@ class HtmlRenderer:
             autoescape=select_autoescape(["html", "xml"]),
         )
 
-    def render_interface(self, runtime: InterfaceRuntime) -> str:
+    def render_interface(self, model: InterfaceRenderModel) -> str:
         template = self.env.get_template("interface.html")
-        component_specs = {component.id: component for component in runtime.spec.components}
-        return template.render(runtime=runtime, model=runtime.model(), component_specs=component_specs)
+        return template.render(model=model, title=model.title)
 
-    def render_component(self, runtime: InterfaceRuntime, component_id: str) -> str:
-        component_specs = {component.id: component for component in runtime.spec.components}
-        spec: ComponentSpec = component_specs[component_id]
-        template = self.env.get_template(f"components/{spec.use}.html")
-        return template.render(
-            runtime=runtime,
-            model=runtime.model(),
-            component_id=component_id,
-            component_spec=spec,
-            component_state=runtime.components[component_id].state,
-            component_output=runtime.components[component_id].output,
-        )
+    def render_component(self, component: ComponentRenderModel) -> str:
+        template = self.env.get_template(f"interactions/{component.interaction.role}.html")
+        return template.render(component=component)
+
+    def render_update_fragment(
+        self, model: InterfaceRenderModel, component: ComponentRenderModel
+    ) -> str:
+        template = self.env.get_template("update_fragment.html")
+        return template.render(model=model, component=component, title=model.title)

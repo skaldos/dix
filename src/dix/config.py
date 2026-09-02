@@ -35,6 +35,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "theme": "default",
     "host": "127.0.0.1",
     "port": 8000,
+    "reference_renderer_enabled": True,
+    "reference_renderer_path": "/render",
 }
 
 ENV_KEYS = {
@@ -43,6 +45,8 @@ ENV_KEYS = {
     "DIX_THEME": "theme",
     "DIX_HOST": "host",
     "DIX_PORT": "port",
+    "DIX_REFERENCE_RENDERER_ENABLED": "reference_renderer_enabled",
+    "DIX_REFERENCE_RENDERER_PATH": "reference_renderer_path",
 }
 
 
@@ -55,6 +59,13 @@ def default_config_paths(cwd: Path | None = None) -> list[Path]:
 def _coerce_env_value(key: str, raw: str) -> Any:
     if key == "port":
         return int(raw)
+    if key == "reference_renderer_enabled":
+        value = raw.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("reference_renderer_enabled env value must be boolean-like")
     if key == "interface_dirs":
         return [item.strip() for item in raw.split(os.pathsep) if item.strip()]
     return raw
@@ -116,6 +127,11 @@ def validate_config_values(values: dict[str, Any]) -> None:
         raise ValueError("theme must be a non-empty string")
     if not isinstance(values.get("host"), str) or not values["host"]:
         raise ValueError("host must be a non-empty string")
+    if not isinstance(values.get("reference_renderer_enabled"), bool):
+        raise ValueError("reference_renderer_enabled must be a boolean")
+    path = values.get("reference_renderer_path")
+    if not isinstance(path, str) or not path.startswith("/") or path.endswith("/"):
+        raise ValueError("reference_renderer_path must start with '/' and must not end with '/'")
     port = values.get("port")
     if not isinstance(port, int) or port < 1 or port > 65535:
         raise ValueError("port must be an integer between 1 and 65535")
@@ -132,5 +148,7 @@ def write_default_config(path: Path) -> bool:
         "theme = \"default\"\n"
         "host = \"127.0.0.1\"\n"
         "port = 8000\n"
+        "reference_renderer_enabled = true\n"
+        "reference_renderer_path = \"/render\"\n"
     )
     return True

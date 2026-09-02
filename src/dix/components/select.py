@@ -4,7 +4,13 @@ from typing import Any
 
 from dix.elements.list import ListState
 from dix.elements.selection import SelectionState
-from dix.models import ComponentDefinition, ComponentRuntime, ComponentSpec, SelectionMode
+from dix.models import (
+    ComponentDefinition,
+    ComponentRuntime,
+    ComponentSpec,
+    InteractionContract,
+    SelectionMode,
+)
 
 from .base import Component
 
@@ -32,6 +38,18 @@ class SelectComponent(Component):
         description="Selection component backed by headless list and selection elements.",
         elements=["list", "selection"],
         outputs=["selected", "selected_items"],
+        interaction=InteractionContract(
+            role="choice_input",
+            capabilities=["single_choice", "multi_choice", "option_list", "selection_state"],
+            state_fields=[
+                "list.items",
+                "list.loading",
+                "list.error",
+                "selection.selected",
+                "selection.mode",
+            ],
+            output_fields=["selected", "selected_items"],
+        ),
     )
 
     def create_runtime(self, spec: ComponentSpec) -> ComponentRuntime:
@@ -65,14 +83,17 @@ class SelectComponent(Component):
         else:
             if isinstance(selected, list):
                 selected = selected[0] if selected else None
-            selection_state = selection_state.model_copy(update={"selected": None if selected in (None, "") else str(selected)})
+            next_selected = None if selected in (None, "") else str(selected)
+            selection_state = selection_state.model_copy(update={"selected": next_selected})
 
         selected_values = (
             selection_state.selected
             if isinstance(selection_state.selected, list)
             else ([] if selection_state.selected is None else [selection_state.selected])
         )
-        selected_items = [item for item in list_state.items if str(item.get("id")) in selected_values]
+        selected_items = [
+            item for item in list_state.items if str(item.get("id")) in selected_values
+        ]
         return runtime.model_copy(
             update={
                 "state": {

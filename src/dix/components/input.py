@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from dix.elements.value import ValueState
-from dix.models import ComponentDefinition, ComponentRuntime, ComponentSpec
+from dix.models import ComponentDefinition, ComponentRuntime, ComponentSpec, InteractionContract
 
 from .base import Component
 
@@ -14,6 +14,12 @@ class InputComponent(Component):
         description="Text-like input component backed by the headless value element.",
         elements=["value"],
         outputs=["value", "valid"],
+        interaction=InteractionContract(
+            role="value_input",
+            capabilities=["set_value", "clear_value", "validation_state"],
+            state_fields=["value.value", "value.valid", "value.error"],
+            output_fields=["value", "valid"],
+        ),
     )
 
     def create_runtime(self, spec: ComponentSpec) -> ComponentRuntime:

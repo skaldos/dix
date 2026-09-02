@@ -6,7 +6,15 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from dix.components import get_core_components
-from dix.models import ComponentRuntime, InterfaceSpec, Session
+from dix.models import (
+    ComponentModel,
+    ComponentRenderModel,
+    ComponentRuntime,
+    InterfaceRenderModel,
+    InterfaceSpec,
+    InteractionModel,
+    Session,
+)
 
 
 class InterfaceRuntimeModel(BaseModel):
@@ -14,7 +22,9 @@ class InterfaceRuntimeModel(BaseModel):
 
     interface_id: str
     title: str
+    description: str | None = None
     session: Session
+    components: list[ComponentModel]
     component_state: dict[str, dict[str, Any]]
     component_output: dict[str, dict[str, Any]]
     events: list[dict[str, Any]] = Field(default_factory=list)
@@ -27,13 +37,49 @@ class InterfaceRuntime:
     components: dict[str, ComponentRuntime]
     events: list[dict[str, Any]] = field(default_factory=list)
 
+    def _component_model(self, component_id: str) -> ComponentModel:
+        spec_by_id = {component.id: component for component in self.spec.components}
+        spec = spec_by_id[component_id]
+        runtime = self.components[component_id]
+        definition = get_core_components()[spec.use].definition
+        return ComponentModel(
+            id=component_id,
+            use=spec.use,
+            config=spec.config,
+            interaction=InteractionModel.model_validate(definition.interaction.model_dump()),
+            state=runtime.state,
+            output=runtime.output,
+        )
+
     def model(self) -> InterfaceRuntimeModel:
         return InterfaceRuntimeModel(
             interface_id=self.spec.interface.id,
             title=self.spec.interface.title,
+            description=self.spec.interface.description,
             session=self.session,
+            components=[self._component_model(component.id) for component in self.spec.components],
             component_state={key: value.state for key, value in self.components.items()},
             component_output={key: value.output for key, value in self.components.items()},
+            events=self.events,
+        )
+
+    def render_model(self, *, renderer_path: str) -> InterfaceRenderModel:
+        return InterfaceRenderModel(
+            interface_id=self.spec.interface.id,
+            title=self.spec.interface.title,
+            description=self.spec.interface.description,
+            session=self.session,
+            components=[
+                ComponentRenderModel(
+                    **self._component_model(component.id).model_dump(),
+                    update_url=(
+                        f"{renderer_path}/{self.spec.interface.id}/components/"
+                        f"{component.id}/update"
+                    ),
+                )
+                for component in self.spec.components
+            ],
+            model_url=f"/api/interfaces/{self.spec.interface.id}/model",
             events=self.events,
         )
 
@@ -42,7 +88,9 @@ class RuntimeStore:
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], InterfaceRuntime] = {}
 
-    def get_or_create(self, spec: InterfaceSpec, session: Session | None = None) -> InterfaceRuntime:
+    def get_or_create(
+        self, spec: InterfaceSpec, session: Session | None = None
+    ) -> InterfaceRuntime:
         final_session = session or Session()
         key = (spec.interface.id, final_session.id)
         if key not in self._items:

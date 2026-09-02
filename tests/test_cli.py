@@ -36,3 +36,6 @@ def test_component_list(capsys) -> None:
     assert main(["component", "list"]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert {row["id"] for row in rows} == {"input", "select"}
+    by_id = {row["id"]: row for row in rows}
+    assert by_id["input"]["interaction"]["role"] == "value_input"
+    assert by_id["select"]["interaction"]["role"] == "choice_input"

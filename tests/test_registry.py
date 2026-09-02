@@ -8,8 +8,10 @@ from dix.registry import RegistryError, component_definitions, list_interfaces, 
 
 
 def test_component_definitions_include_core_components() -> None:
-    ids = {definition.id for definition in component_definitions()}
-    assert ids == {"input", "select"}
+    definitions = {definition.id: definition for definition in component_definitions()}
+    assert set(definitions) == {"input", "select"}
+    assert definitions["input"].interaction.role == "value_input"
+    assert definitions["select"].interaction.role == "choice_input"
 
 
 def test_load_interface_validates_component_refs(tmp_path: Path) -> None:

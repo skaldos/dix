@@ -1,0 +1,16 @@
+{% set cfg = component.config %}
+{% set output = component.output %}
+<div class="dix-component" data-component="{{ component.id }}" data-use="{{ component.use }}" data-interaction="{{ component.interaction.role }}">
+  <label for="{{ component.id }}">{{ cfg.get("label", component.id) }}</label>
+  <input
+    id="{{ component.id }}"
+    name="value"
+    value="{{ output.get('value') or '' }}"
+    placeholder="{{ cfg.get('placeholder', '') }}"
+    hx-post="{{ component.update_url }}"
+    hx-trigger="change"
+    hx-target="#component-{{ component.id }}"
+    hx-swap="outerHTML"
+  >
+  {% if output.get("valid") is sameas false %}<p role="alert">Invalid value</p>{% endif %}
+</div>
