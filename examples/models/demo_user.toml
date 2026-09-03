@@ -1,0 +1,12 @@
+[model]
+name = "demo_user"
+version = "1"
+
+[fields.username]
+type = "string"
+
+[fields.age]
+type = "integer"
+
+[fields.metadata]
+type = "any"

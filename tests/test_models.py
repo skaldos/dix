@@ -27,6 +27,22 @@ def test_interface_rejects_duplicate_component_ids() -> None:
         )
 
 
+@pytest.mark.parametrize("collection", ["compositions", "functions"])
+def test_interface_rejects_duplicate_functional_ids(collection: str) -> None:
+    item = (
+        {"id": "same", "use": "datamodel_files"}
+        if collection == "compositions"
+        else {"id": "same", "call": "data.run"}
+    )
+    with pytest.raises(ValidationError, match=f"duplicate {collection[:-1]} id"):
+        InterfaceSpec.model_validate(
+            {
+                "interface": {"id": "demo", "title": "Demo"},
+                collection: [item, item],
+            }
+        )
+
+
 def test_value_state_set_and_clear() -> None:
     state = ValueState().set("hello")
     assert state.value == "hello"

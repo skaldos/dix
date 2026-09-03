@@ -2,11 +2,12 @@
 
 Declarative Interface eXecutor.
 
-`dix` provides spec-driven interfaces for controlled actions. This foundation cut proves the
-smallest useful end-to-end path:
+`dix` provides spec-driven interfaces for controlled actions. The current foundation proves two
+small end-to-end paths:
 
 ```text
-element state/functions -> component abstraction -> interface composition -> API -> optional renderer
+UI element state/functions -> UI component -> interface -> API -> optional renderer
+core element capability -> datamodel capability -> trusted composition -> interface function -> API
 ```
 
 The project intentionally does **not** include business-specific provisioning logic, AD/LDAP/OIDC,
@@ -14,9 +15,14 @@ PDF generation, a workflow engine, or a React/Vue/Svelte SPA in this foundation 
 
 ## Concepts
 
-- **Interface**: a concrete declarative UI composition made from components.
-- **Component**: the primary authoring unit used by interfaces. Components hide element wiring.
-- **Element**: a headless state/function primitive such as `value`, `list`, or `selection`.
+- **Interface**: the only externally exposed declarative control surface. It may expose UI state or
+  explicitly bound functions.
+- **Core component**: a narrow internal capability. `element` handles atomic native Python values;
+  `datamodel` registers schemas and instantiates mappings through element handlers.
+- **Composition**: trusted in-process Python code that combines core capabilities. Specs can only
+  select explicitly registered factories and operations; arbitrary import paths are not accepted.
+- **UI component**: the existing renderer-oriented authoring unit used by the visual demo.
+- **UI element**: a headless UI state/function primitive such as `value`, `list`, or `selection`.
 - **Interaction contract**: component-owned logical control contract consumed by renderers.
 - **Core API**: headless JSON surface under `/api/...`; it never returns renderer fragments.
 - **Renderer**: presentation adapter. The included reference renderer is HTML/Jinja/HTMX and lives under `/render/...` by default.
@@ -44,6 +50,7 @@ Open:
 ```text
 http://127.0.0.1:8000/render/demo_request
 http://127.0.0.1:8000/api/interfaces/demo_request/model
+http://127.0.0.1:8000/api/interfaces/demo_datamodel/functions/run
 ```
 
 ## CLI
@@ -83,3 +90,20 @@ It uses two core components:
 - `select`, backed by the headless `list` and `selection` elements
 
 Updating either component changes the interface runtime model. API update endpoints always return JSON. The reference renderer has separate render endpoints and returns HTML fragments for HTMX updates.
+
+## Headless capability demo
+
+`examples/interfaces/demo_datamodel.toml` binds the included trusted `datamodel_files` composition.
+The composition translates `examples/models/demo_user.toml` into native core objects and parses
+`examples/data/demo_user.json` outside the core capabilities. Its model-local integer wrapper turns
+the JSON string `"42"` into an integer before delegating to the strict core integer handler.
+
+The interface exposes exactly one side-effect-free function for this example:
+
+```bash
+curl http://127.0.0.1:8000/api/interfaces/demo_datamodel/functions/run
+```
+
+The model is registered when the interface composition is first bound and is reused by later GET
+requests. TOML and JSON parsing remain composition concerns; `dix.core.element` and
+`dix.core.datamodel` only process native Python objects.

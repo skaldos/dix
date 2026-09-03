@@ -7,7 +7,14 @@ from urllib.parse import parse_qs
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from dix.compositions import CompositionError, CompositionRegistry, DatamodelFilesFactory
 from dix.config import DEFAULT_CONFIG, load_effective_config
+from dix.core import create_core_component_registry
+from dix.functional import (
+    FunctionalInterfaceError,
+    FunctionalRuntimeStore,
+    InterfaceFunctionNotFound,
+)
 from dix.models import ComponentRenderModel, Session
 from dix.registry import InterfaceNotFound, RegistryError, find_interface
 from dix.rendering import HtmlRenderer
@@ -27,6 +34,16 @@ def create_app(config: dict[str, Any] | None = None) -> FastAPI:
     app = FastAPI(title="dix")
     store = RuntimeStore()
     renderer = HtmlRenderer()
+    capability_components = create_core_component_registry()
+    composition_registry = CompositionRegistry()
+    composition_registry.register(DatamodelFilesFactory())
+    functional_store = FunctionalRuntimeStore(
+        components=capability_components,
+        compositions=composition_registry,
+    )
+    app.state.capability_components = capability_components
+    app.state.composition_registry = composition_registry
+    app.state.functional_store = functional_store
 
     def session_from_request(request: Request) -> Session:
         user = request.headers.get("X-DIX-User")
@@ -133,6 +150,20 @@ def create_app(config: dict[str, Any] | None = None) -> FastAPI:
         data = await parse_update_payload(request)
         update_runtime(runtime, component_id, data)
         return runtime.model().model_dump()
+
+    @app.get("/api/interfaces/{interface_id}/functions/{function_id}")
+    def invoke_interface_function(
+        interface_id: str,
+        function_id: str,
+        request: Request,
+    ) -> Any:
+        runtime = load_runtime(interface_id, request)
+        try:
+            return functional_store.get_or_create(runtime.spec).invoke(function_id)
+        except InterfaceFunctionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (FunctionalInterfaceError, CompositionError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if cfg.get("reference_renderer_enabled", True):
         render_path = _renderer_path(cfg)

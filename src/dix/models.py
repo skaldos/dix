@@ -44,6 +44,37 @@ class ComponentSpec(BaseModel):
         return value
 
 
+class CompositionSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    use: str = Field(min_length=1)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("id", "use")
+    @classmethod
+    def validate_identifier(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
+class InterfaceFunctionSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    call: str = Field(min_length=3)
+
+    @field_validator("id", "call")
+    @classmethod
+    def validate_value(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
 class InterfaceHeader(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -58,17 +89,25 @@ class InterfaceSpec(BaseModel):
 
     interface: InterfaceHeader
     components: list[ComponentSpec] = Field(default_factory=list)
+    compositions: list[CompositionSpec] = Field(default_factory=list)
+    functions: list[InterfaceFunctionSpec] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
     source: str | None = None
 
     @model_validator(mode="after")
-    def validate_component_ids(self) -> "InterfaceSpec":
-        seen: set[str] = set()
-        for component in self.components:
-            if component.id in seen:
-                raise ValueError(f"duplicate component id: {component.id}")
-            seen.add(component.id)
+    def validate_local_ids(self) -> "InterfaceSpec":
+        self._require_unique_ids("component", [item.id for item in self.components])
+        self._require_unique_ids("composition", [item.id for item in self.compositions])
+        self._require_unique_ids("function", [item.id for item in self.functions])
         return self
+
+    @staticmethod
+    def _require_unique_ids(kind: str, values: list[str]) -> None:
+        seen: set[str] = set()
+        for value in values:
+            if value in seen:
+                raise ValueError(f"duplicate {kind} id: {value}")
+            seen.add(value)
 
 
 class Session(BaseModel):
