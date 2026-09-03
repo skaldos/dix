@@ -24,11 +24,16 @@ from .datamodel import (
     RegisteredModel,
     RegisteredModelDescriptor,
 )
-from .registry import ComponentRegistry, ComponentRegistryError
+from .registry import (
+    ComponentRegistry,
+    ComponentRegistryError,
+    create_core_component_registry,
+)
 
 __all__ = [
     "ComponentRegistry",
     "ComponentRegistryError",
+    "create_core_component_registry",
     "DatamodelComponent",
     "DatamodelError",
     "ElementBinding",

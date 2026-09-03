@@ -43,3 +43,15 @@ class ComponentRegistry:
 
     def ids(self) -> tuple[str, ...]:
         return tuple(self._components)
+
+
+def create_core_component_registry() -> ComponentRegistry:
+    """Build one coherent set of stable core component instances."""
+    from .datamodel import DatamodelComponent
+    from .element import ElementComponent
+
+    registry = ComponentRegistry()
+    element = ElementComponent.with_core_types()
+    registry.register(element)
+    registry.register(DatamodelComponent(element=element))
+    return registry
