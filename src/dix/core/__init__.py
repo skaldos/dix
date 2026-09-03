@@ -14,11 +14,23 @@ from .element import (
     ElementTypeDescriptor,
     UnknownElementType,
 )
+from .datamodel import (
+    DatamodelComponent,
+    DatamodelError,
+    ModelDefinition,
+    ModelIssue,
+    ModelNotFound,
+    ModelResult,
+    RegisteredModel,
+    RegisteredModelDescriptor,
+)
 from .registry import ComponentRegistry, ComponentRegistryError
 
 __all__ = [
     "ComponentRegistry",
     "ComponentRegistryError",
+    "DatamodelComponent",
+    "DatamodelError",
     "ElementBinding",
     "ElementBindingError",
     "ElementComponent",
@@ -30,5 +42,11 @@ __all__ = [
     "ElementScope",
     "ElementSpec",
     "ElementTypeDescriptor",
+    "ModelDefinition",
+    "ModelIssue",
+    "ModelNotFound",
+    "ModelResult",
+    "RegisteredModel",
+    "RegisteredModelDescriptor",
     "UnknownElementType",
 ]

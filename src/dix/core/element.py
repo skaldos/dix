@@ -271,6 +271,35 @@ class ElementComponent:
             parent=parent or self.default_scope,
         )
 
+    def create_extension_scope(
+        self,
+        bindings: tuple[ElementBinding, ...],
+        parent: ElementScope | None = None,
+    ) -> ElementScope:
+        if any(binding.mode != "define" for binding in bindings):
+            raise ElementBindingError("component extensions must use mode='define'")
+        return self._make_scope(
+            bindings,
+            source="extension",
+            parent=parent or self.default_scope,
+        )
+
+    def describe_scope(self, scope: ElementScope) -> tuple[ElementTypeDescriptor, ...]:
+        descriptors: list[ElementTypeDescriptor] = []
+        current: ElementScope | None = scope
+        while current is not None:
+            descriptors.extend(
+                ElementTypeDescriptor(
+                    type_name=type_name,
+                    handler_id=binding.handler_id,
+                    source=current.source,
+                    mode=binding.mode,
+                )
+                for type_name, binding in sorted(current.bindings.items())
+            )
+            current = current.parent
+        return tuple(descriptors)
+
     def bind(self, spec: ElementSpec, scope: ElementScope | None = None) -> ElementProcessor:
         final_scope = scope or self.default_scope
         processor = self._bind_from_scope(spec, final_scope)
