@@ -128,6 +128,7 @@ def create_core_component_registry() -> ComponentRegistry:
     """Build the provider registry for the primitive core capabilities."""
     from .datamodel import DatamodelComponent
     from .element import ElementComponent
+    from .composition import CompositionComponent
 
     registry = ComponentRegistry()
     registry.register_provider(
@@ -144,6 +145,13 @@ def create_core_component_registry() -> ComponentRegistry:
             create=lambda scope: DatamodelComponent(
                 element=scope.require("element", ElementComponent)
             ),
+        )
+    )
+    registry.register_provider(
+        ComponentProvider(
+            id="composition",
+            lifetime="runtime",
+            create=lambda scope: CompositionComponent(components=registry),
         )
     )
     return registry

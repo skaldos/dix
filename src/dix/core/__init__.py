@@ -32,8 +32,11 @@ from .registry import (
     ComponentScope,
     create_core_component_registry,
 )
+from .composition import CompositionComponent, CompositionComponentError
 
 __all__ = [
+    "CompositionComponent",
+    "CompositionComponentError",
     "ComponentLifetime",
     "ComponentProvider",
     "ComponentRegistry",

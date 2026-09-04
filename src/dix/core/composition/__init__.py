@@ -2,10 +2,16 @@
 
 from .models import (
     CompositionDefinition,
+    CompositionDependencyEdge,
+    CompositionDependencyGraph,
     CompositionDependencySpec,
     CompositionFunctionSpec,
+    LoadedCompositionDefinition,
+    LoadedModule,
+    ModuleDescriptor,
     ModuleInspection,
 )
+from .component import CompositionComponent, CompositionComponentError
 from .spec import (
     CompositionSpecError,
     discover_modules,
@@ -17,10 +23,17 @@ from .spec import (
 )
 
 __all__ = [
+    "CompositionComponent",
+    "CompositionComponentError",
     "CompositionDefinition",
+    "CompositionDependencyEdge",
+    "CompositionDependencyGraph",
     "CompositionDependencySpec",
     "CompositionFunctionSpec",
     "CompositionSpecError",
+    "LoadedCompositionDefinition",
+    "LoadedModule",
+    "ModuleDescriptor",
     "ModuleInspection",
     "discover_modules",
     "inspect_module",
