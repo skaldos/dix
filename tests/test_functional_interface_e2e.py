@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from dix.core import DatamodelComponent
+from dix.registry import find_interface
 from dix.server import create_app
 
 
@@ -19,15 +19,23 @@ def app_config(interface_dir: Path) -> dict[str, object]:
         "theme": "default",
         "host": "127.0.0.1",
         "port": 8000,
+        "composition": {
+            "trusted_module_roots": [str(repo_root() / "examples" / "modules")],
+            "instance": [],
+        },
     }
 
 
 def test_example_function_runs_headless_datamodel_chain_once() -> None:
     app = create_app(app_config(repo_root() / "examples" / "interfaces"))
     client = TestClient(app)
-    datamodel = app.state.capability_components.require("datamodel", DatamodelComponent)
 
     first = client.get("/api/interfaces/demo_datamodel/functions/run")
+    instances_after_first = tuple(app.state.composition_component.instances())
+    spec = find_interface([repo_root() / "examples" / "interfaces"], "demo_datamodel")
+    functional = app.state.functional_store.get_or_create(spec)
+    datamodel = functional.compositions["data"].runtime.datamodel
+    registrations_after_first = datamodel.registration_count
     second = client.get("/api/interfaces/demo_datamodel/functions/run")
 
     assert first.status_code == 200
@@ -43,7 +51,8 @@ def test_example_function_runs_headless_datamodel_chain_once() -> None:
         },
     }
     assert first.json()["issues"] == []
-    assert datamodel.registration_count == 1
+    assert datamodel.registration_count == registrations_after_first == 1
+    assert tuple(app.state.composition_component.instances()) == instances_after_first
 
 
 def test_unknown_composition_is_rejected_during_interface_binding(tmp_path: Path) -> None:
@@ -65,7 +74,7 @@ def test_unknown_composition_is_rejected_during_interface_binding(tmp_path: Path
     response = client.get("/api/interfaces/bad/functions/run")
 
     assert response.status_code == 422
-    assert "composition not found" in response.json()["detail"]
+    assert "composition definition is not loaded" in response.json()["detail"]
 
 
 def test_unknown_operation_is_rejected_during_interface_binding(tmp_path: Path) -> None:
@@ -86,7 +95,7 @@ def test_unknown_operation_is_rejected_during_interface_binding(tmp_path: Path) 
         'title = "Bad"\n\n'
         '[[compositions]]\n'
         'id = "data"\n'
-        'use = "datamodel_files"\n'
+        'use = "dix/examples/files/datamodel_files"\n'
         'config = { model_path = "../fixtures/model.toml", '
         'data_path = "../fixtures/data.json" }\n\n'
         '[[functions]]\n'
@@ -98,7 +107,7 @@ def test_unknown_operation_is_rejected_during_interface_binding(tmp_path: Path) 
     response = client.get("/api/interfaces/bad/functions/run")
 
     assert response.status_code == 422
-    assert "unknown operation 'missing'" in response.json()["detail"]
+    assert "unknown function 'missing'" in response.json()["detail"]
 
 
 def test_missing_function_returns_not_found_and_existing_routes_still_work() -> None:

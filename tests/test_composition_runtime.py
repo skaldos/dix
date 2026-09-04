@@ -242,6 +242,35 @@ second = "datamodel"
     assert root.runtime.first is root.runtime.second
 
 
+def test_keyword_only_constructor_dependency_order_is_not_semantic(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    write_composition(
+        module,
+        "ordered",
+        """[composition]
+id = "ordered"
+[components]
+first = "datamodel"
+second = "element"
+""",
+        """class Runtime:
+    def __init__(self, *, second, config, first, context):
+        self.first = first
+        self.second = second
+""",
+    )
+    compositions = runtime_component()
+    compositions.load_module(module, module_id="test/runtime")
+
+    root = compositions.create_instance(
+        CompositionInstanceSpec("ordered", "test/runtime/ordered", {}, tmp_path),
+        owner_scope_id="owner",
+    )
+
+    assert root.runtime.first.component_id == "datamodel"
+    assert root.runtime.second.component_id == "element"
+
+
 def test_dependency_cycle_fails_before_runtime_construction(tmp_path: Path) -> None:
     module = tmp_path / "module"
     marker = tmp_path / "constructed"

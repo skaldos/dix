@@ -55,6 +55,20 @@ def test_load_module_publishes_all_definitions_in_sorted_order(tmp_path: Path) -
     assert compositions.require_module("acme/bundle") is loaded
 
 
+def test_runtime_can_import_composition_local_python_modules(tmp_path: Path) -> None:
+    module = tmp_path / "bundle"
+    root = write_composition(
+        module,
+        "item",
+        runtime="from .helper import VALUE\nclass Runtime:\n    value = VALUE\n",
+    )
+    (root / "helper.py").write_text("VALUE = 'local'\n")
+
+    loaded = component().load_module(module, module_id="acme/bundle")
+
+    assert loaded.compositions["acme/bundle/item"].runtime_type.value == "local"
+
+
 def test_digest_mismatch_prevents_candidate_import(tmp_path: Path) -> None:
     module = tmp_path / "bundle"
     marker = tmp_path / "imported"

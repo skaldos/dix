@@ -114,7 +114,7 @@ class CompositionComponent:
                 )
         except Exception:
             for module_name in imported:
-                sys.modules.pop(module_name, None)
+                self._remove_runtime_modules(module_name)
             raise
 
         loaded = LoadedModule(
@@ -157,7 +157,7 @@ class CompositionComponent:
         del self._modules[module_id]
         for definition_id, definition in loaded.compositions.items():
             del self._definitions[definition_id]
-            sys.modules.pop(definition.runtime_module_name, None)
+            self._remove_runtime_modules(definition.runtime_module_name)
         return loaded
 
     def modules(self) -> tuple[LoadedModule, ...]:
@@ -472,12 +472,10 @@ class CompositionComponent:
     def describe_composition(self, composition_id: str) -> CompositionDescriptor:
         loaded_definition = self._require_loaded_definition(composition_id)
         module = self.require_module(loaded_definition.definition.module_id)
+        descriptors = self._describe_function_graph(composition_id)
         return CompositionDescriptor(
             definition=loaded_definition.definition,
-            functions=describe_runtime_functions(
-                loaded_definition.definition,
-                loaded_definition.runtime_type,
-            ),
+            functions=descriptors[composition_id],
             module=ModuleDescriptor(
                 id=module.inspection.id,
                 root=module.inspection.root,
@@ -501,30 +499,42 @@ class CompositionComponent:
 
     def _validate_runtime_graph(self, composition_id: str) -> None:
         graph = self.describe_dependency_graph(composition_id)
-        descriptors: dict[str, set[str]] = {}
         for definition_id in graph.nodes:
             loaded = self._require_loaded_definition(definition_id)
             definition = loaded.definition
             aliases = tuple((*sorted(definition.components), *sorted(definition.compositions)))
             validate_runtime_constructor(loaded.runtime_type, aliases)
-            descriptors[definition_id] = {
-                item.id for item in describe_runtime_functions(definition, loaded.runtime_type)
-            }
-        for definition_id in graph.nodes:
-            definition = self.require_definition(definition_id)
-            for descriptor in describe_runtime_functions(
-                definition,
+        self._describe_function_graph(composition_id)
+
+    def _describe_function_graph(
+        self,
+        composition_id: str,
+    ) -> dict[str, tuple[CompositionFunctionDescriptor, ...]]:
+        graph = self.describe_dependency_graph(composition_id)
+        descriptors = {
+            definition_id: describe_runtime_functions(
+                self.require_definition(definition_id),
                 self._require_loaded_definition(definition_id).runtime_type,
-            ):
+            )
+            for definition_id in graph.nodes
+        }
+        function_ids = {
+            definition_id: {item.id for item in values}
+            for definition_id, values in descriptors.items()
+        }
+        for definition_id, values in descriptors.items():
+            definition = self.require_definition(definition_id)
+            for descriptor in values:
                 if descriptor.origin is None:
                     continue
                 alias, function_id = descriptor.origin.split(".", 1)
                 target = definition.compositions[alias].use
-                if function_id not in descriptors[target]:
+                if function_id not in function_ids[target]:
                     raise CompositionRuntimeError(
                         f"wrapper origin '{descriptor.origin}' in '{definition_id}' refers to "
                         f"undeclared function '{target}.{function_id}'"
                     )
+        return descriptors
 
     def _require_loaded_definition(self, composition_id: str) -> LoadedCompositionDefinition:
         try:
@@ -547,7 +557,11 @@ class CompositionComponent:
             raise CompositionComponentError(
                 f"composition runtime module name is already active: {definition.id}"
             )
-        module_spec = importlib.util.spec_from_file_location(module_name, definition.runtime_path)
+        module_spec = importlib.util.spec_from_file_location(
+            module_name,
+            definition.runtime_path,
+            submodule_search_locations=[str(definition.composition_root)],
+        )
         if module_spec is None or module_spec.loader is None:
             raise CompositionComponentError(
                 f"cannot create runtime import spec for composition: {definition.id}"
@@ -562,11 +576,12 @@ class CompositionComponent:
                     f"composition '{definition.id}' must define runtime.py:Runtime"
                 )
         except Exception:
-            sys.modules.pop(module_name, None)
+            CompositionComponent._remove_runtime_modules(module_name)
             raise
         return runtime_type, module_name
-    CompositionDescriptor,
-    CompositionFunctionDescriptor,
-    CompositionInstance,
-    CompositionInstanceSpec,
-    CompositionRuntimeContext,
+
+    @staticmethod
+    def _remove_runtime_modules(module_name: str) -> None:
+        for active_name in tuple(sys.modules):
+            if active_name == module_name or active_name.startswith(f"{module_name}."):
+                sys.modules.pop(active_name, None)

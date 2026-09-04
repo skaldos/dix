@@ -20,11 +20,10 @@ from dix.core import (
     ModelResult,
     RegisteredModel,
 )
+from dix.core.composition import CompositionRuntimeContext
 
-from .base import BoundComposition, CompositionContext, CompositionError, CompositionOperation
 
-
-class DatamodelFilesError(CompositionError):
+class DatamodelFilesError(Exception):
     """Raised when model or data files cannot be consumed deterministically."""
 
 
@@ -88,7 +87,7 @@ class _DataEnvelope(BaseModel):
     data: dict[str, Any]
 
 
-class _FactoryConfig(BaseModel):
+class _RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_path: str = Field(min_length=1)
@@ -128,14 +127,24 @@ def _integer_string_binding() -> ElementBinding:
     )
 
 
-class DatamodelFilesComposition:
-    """Trusted TOML/JSON adapter around the native datamodel capability."""
+class Runtime:
+    """Trusted TOML/JSON adapter around one local datamodel capability."""
 
-    def __init__(self, datamodel: DatamodelComponent) -> None:
-        self._datamodel = datamodel
+    def __init__(
+        self,
+        *,
+        context: CompositionRuntimeContext,
+        config: Mapping[str, object],
+        datamodel: DatamodelComponent,
+    ) -> None:
+        self.context = context
+        self.config = config
+        self.datamodel = datamodel
         self._models: dict[tuple[str, str | None], list[RegisteredModel]] = {}
+        self._configured_model: RegisteredModel | None = None
 
     def register_model(self, path: Path) -> RegisteredModel:
+        """Register one TOML model source in this composition instance."""
         raw = self._read_toml(path)
         try:
             parsed = _ModelFile.model_validate(raw)
@@ -148,7 +157,7 @@ class DatamodelFilesComposition:
                     for field_name, field in parsed.fields.items()
                 },
             )
-            registered = self._datamodel.register_model(
+            registered = self.datamodel.register_model(
                 definition,
                 elements=(_integer_string_binding(),),
             )
@@ -159,12 +168,12 @@ class DatamodelFilesComposition:
         return registered
 
     def load_data(self, json_string: str) -> ModelResult:
+        """Load one JSON data envelope against a registered model."""
         try:
             raw = json.loads(json_string)
             envelope = _DataEnvelope.model_validate(raw)
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             raise DatamodelFilesError(f"invalid data input: {exc}") from exc
-
         key = (envelope.model.name, envelope.model.version)
         models = self._models.get(key, [])
         if not models:
@@ -178,7 +187,31 @@ class DatamodelFilesComposition:
                 f"model reference is ambiguous in this composition: "
                 f"name={name!r}, version={version!r}"
             )
-        return self._datamodel.instantiate(models[0], envelope.data)
+        return self.datamodel.instantiate(models[0], envelope.data)
+
+    def run(self) -> dict[str, Any]:
+        """Run the configured side-effect-free file demo."""
+        try:
+            parsed = _RuntimeConfig.model_validate(self.config)
+        except ValidationError as exc:
+            raise DatamodelFilesError(f"invalid datamodel_files config: {exc}") from exc
+        model_path = self._resolve_path(parsed.model_path)
+        data_path = self._resolve_path(parsed.data_path)
+        if self._configured_model is None:
+            self._configured_model = self.register_model(model_path)
+        try:
+            json_string = data_path.read_text()
+        except OSError as exc:
+            raise DatamodelFilesError(f"cannot load data file {data_path}: {exc}") from exc
+        return _model_result_payload(self.load_data(json_string))
+
+    def _resolve_path(self, raw_path: str) -> Path:
+        path = Path(raw_path).expanduser()
+        return (
+            path.resolve()
+            if path.is_absolute()
+            else (self.context.config_base_dir / path).resolve()
+        )
 
     @staticmethod
     def _read_toml(path: Path) -> Mapping[str, Any]:
@@ -188,7 +221,7 @@ class DatamodelFilesComposition:
             raise DatamodelFilesError(f"cannot load model file {path}: {exc}") from exc
 
 
-def model_result_payload(result: ModelResult) -> dict[str, Any]:
+def _model_result_payload(result: ModelResult) -> dict[str, Any]:
     return {
         "model_uid": str(result.model_uid),
         "values": dict(result.values),
@@ -206,42 +239,3 @@ def _issue_payload(issue: ModelIssue) -> dict[str, Any]:
         "message": issue.message,
         "details": dict(issue.details),
     }
-
-
-class DatamodelFilesFactory:
-    composition_id = "datamodel_files"
-
-    def bind(
-        self,
-        context: CompositionContext,
-        config: Mapping[str, Any],
-    ) -> BoundComposition:
-        try:
-            parsed = _FactoryConfig.model_validate(config)
-        except ValidationError as exc:
-            raise DatamodelFilesError(f"invalid datamodel_files config: {exc}") from exc
-
-        datamodel = context.components.require("datamodel", DatamodelComponent)
-        composition = DatamodelFilesComposition(datamodel)
-        model_path = _resolve_path(context.base_dir, parsed.model_path)
-        data_path = _resolve_path(context.base_dir, parsed.data_path)
-        composition.register_model(model_path)
-
-        def run(parameters: Mapping[str, Any]) -> dict[str, Any]:
-            if parameters:
-                raise DatamodelFilesError("datamodel_files.run does not accept parameters")
-            try:
-                json_string = data_path.read_text()
-            except OSError as exc:
-                raise DatamodelFilesError(f"cannot load data file {data_path}: {exc}") from exc
-            return model_result_payload(composition.load_data(json_string))
-
-        return BoundComposition(
-            id=self.composition_id,
-            operations={"run": CompositionOperation(id="run", handler=run)},
-        )
-
-
-def _resolve_path(base_dir: Path, raw_path: str) -> Path:
-    path = Path(raw_path).expanduser()
-    return path.resolve() if path.is_absolute() else (base_dir / path).resolve()

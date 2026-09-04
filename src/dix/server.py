@@ -7,7 +7,6 @@ from urllib.parse import parse_qs
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from dix.compositions import CompositionError, CompositionRegistry, DatamodelFilesFactory
 from dix.assembly import assemble_compositions
 from dix.config import (
     DEFAULT_CONFIG,
@@ -50,15 +49,11 @@ def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAP
     renderer = HtmlRenderer()
     composition_assembly = assemble_compositions(composition_settings)
     capability_components = composition_assembly.components
-    composition_registry = CompositionRegistry()
-    composition_registry.register(DatamodelFilesFactory())
     functional_store = FunctionalRuntimeStore(
-        components=capability_components,
-        compositions=composition_registry,
+        compositions=composition_assembly.compositions,
     )
     app.state.capability_components = capability_components
     app.state.composition_component = composition_assembly.compositions
-    app.state.composition_registry = composition_registry
     app.state.functional_store = functional_store
 
     def session_from_request(request: Request) -> Session:
@@ -178,7 +173,7 @@ def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAP
             return functional_store.get_or_create(runtime.spec).invoke(function_id)
         except InterfaceFunctionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (FunctionalInterfaceError, CompositionError) as exc:
+        except FunctionalInterfaceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if cfg.get("reference_renderer_enabled", True):
@@ -209,8 +204,9 @@ def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAP
 
 
 def serve() -> int:
-    cfg = load_effective_config().values
+    effective = load_effective_config()
+    cfg = effective.values
     import uvicorn
 
-    uvicorn.run(create_app(cfg), host=cfg["host"], port=cfg["port"])
+    uvicorn.run(create_app(effective), host=cfg["host"], port=cfg["port"])
     return 0

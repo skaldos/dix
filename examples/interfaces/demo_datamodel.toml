@@ -6,7 +6,7 @@ access = { mode = "public" }
 
 [[compositions]]
 id = "data"
-use = "datamodel_files"
+use = "dix/examples/files/datamodel_files"
 config = { model_path = "../models/demo_user.toml", data_path = "../data/demo_user.json" }
 
 [[functions]]

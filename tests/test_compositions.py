@@ -4,16 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from dix.compositions import (
-    CompositionContext,
-    CompositionError,
-    CompositionOperationNotFound,
-    CompositionRegistry,
-    DatamodelFilesComposition,
-    DatamodelFilesError,
-    DatamodelFilesFactory,
-)
-from dix.core import DatamodelComponent, create_core_component_registry
+from dix.core import CompositionComponent, DatamodelComponent, create_core_component_registry
+from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
 
 
 MODEL_TOML = """
@@ -43,17 +35,39 @@ DATA_JSON = """
 """
 
 
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
 def write_model(path: Path) -> Path:
     path.write_text(MODEL_TOML)
     return path
 
 
-def test_direct_composition_registers_model_and_loads_data(tmp_path: Path) -> None:
-    datamodel = DatamodelComponent()
-    composition = DatamodelFilesComposition(datamodel)
+def datamodel_files_component(tmp_path: Path) -> tuple[CompositionComponent, object]:
+    registry = create_core_component_registry()
+    compositions = registry.require("composition", CompositionComponent)
+    compositions.load_module(
+        repo_root() / "examples" / "modules" / "dix" / "examples" / "files",
+        module_id="dix/examples/files",
+    )
+    root = compositions.create_instance(
+        CompositionInstanceSpec(
+            id="data",
+            use="dix/examples/files/datamodel_files",
+            config={},
+            config_base_dir=tmp_path,
+        ),
+        owner_scope_id="test",
+    )
+    return compositions, root
 
-    model = composition.register_model(write_model(tmp_path / "model.toml"))
-    result = composition.load_data(DATA_JSON)
+
+def test_direct_runtime_registers_model_and_loads_data(tmp_path: Path) -> None:
+    _, root = datamodel_files_component(tmp_path)
+
+    model = root.api.register_model(write_model(tmp_path / "model.toml"))
+    result = root.api.load_data(DATA_JSON)
 
     assert model.definition.name == "user_request"
     assert model.definition.version == "1"
@@ -63,16 +77,16 @@ def test_direct_composition_registers_model_and_loads_data(tmp_path: Path) -> No
         "age": 42,
         "metadata": {"source": "test"},
     }
-    assert datamodel.registration_count == 1
+    assert root.runtime.datamodel.registration_count == 1
 
 
-def test_composition_integer_wrapper_is_local_to_its_model(tmp_path: Path) -> None:
-    datamodel = DatamodelComponent()
-    composition = DatamodelFilesComposition(datamodel)
-    wrapped = composition.register_model(write_model(tmp_path / "model.toml"))
+def test_integer_wrapper_is_local_to_composition_datamodel(tmp_path: Path) -> None:
+    _, root = datamodel_files_component(tmp_path)
+    wrapped = root.api.register_model(write_model(tmp_path / "model.toml"))
+    datamodel: DatamodelComponent = root.runtime.datamodel
     base = datamodel.register_model(wrapped.definition)
 
-    wrapped_result = composition.load_data(DATA_JSON)
+    wrapped_result = root.api.load_data(DATA_JSON)
     base_result = datamodel.instantiate(
         base,
         {"username": "alice", "age": "42", "metadata": {}},
@@ -83,74 +97,59 @@ def test_composition_integer_wrapper_is_local_to_its_model(tmp_path: Path) -> No
     assert base_result.compatible is False
 
 
-def test_composition_rejects_invalid_model_and_data_input(tmp_path: Path) -> None:
-    composition = DatamodelFilesComposition(DatamodelComponent())
+def test_runtime_rejects_invalid_model_and_data_input(tmp_path: Path) -> None:
+    _, root = datamodel_files_component(tmp_path)
     invalid_model = tmp_path / "invalid.toml"
     invalid_model.write_text("[model\n")
 
-    with pytest.raises(DatamodelFilesError, match="cannot load model file"):
-        composition.register_model(invalid_model)
+    with pytest.raises(Exception, match="cannot load model file"):
+        root.api.register_model(invalid_model)
 
-    composition.register_model(write_model(tmp_path / "model.toml"))
-    with pytest.raises(DatamodelFilesError, match="invalid data input"):
-        composition.load_data("not-json")
-    with pytest.raises(DatamodelFilesError, match="invalid data input"):
-        composition.load_data('{"model": {}, "data": {}}')
+    root.api.register_model(write_model(tmp_path / "model.toml"))
+    with pytest.raises(Exception, match="invalid data input"):
+        root.api.load_data("not-json")
+    with pytest.raises(Exception, match="invalid data input"):
+        root.api.load_data('{"model": {}, "data": {}}')
 
 
-def test_composition_rejects_unknown_and_ambiguous_local_models(tmp_path: Path) -> None:
-    composition = DatamodelFilesComposition(DatamodelComponent())
+def test_runtime_rejects_unknown_and_ambiguous_local_models(tmp_path: Path) -> None:
+    _, root = datamodel_files_component(tmp_path)
 
-    with pytest.raises(DatamodelFilesError, match="not registered"):
-        composition.load_data(DATA_JSON)
+    with pytest.raises(Exception, match="not registered"):
+        root.api.load_data(DATA_JSON)
 
     path = write_model(tmp_path / "model.toml")
-    composition.register_model(path)
-    composition.register_model(path)
-    with pytest.raises(DatamodelFilesError, match="ambiguous"):
-        composition.load_data(DATA_JSON)
+    root.api.register_model(path)
+    root.api.register_model(path)
+    with pytest.raises(Exception, match="ambiguous"):
+        root.api.load_data(DATA_JSON)
 
 
-def test_trusted_factory_resolves_paths_and_exposes_only_bound_operations(
-    tmp_path: Path,
-) -> None:
-    fixture_dir = tmp_path / "fixtures"
-    fixture_dir.mkdir()
-    write_model(fixture_dir / "model.toml")
-    (fixture_dir / "data.json").write_text(DATA_JSON)
-    components = create_core_component_registry()
-    registry = CompositionRegistry()
-    registry.register(DatamodelFilesFactory())
-
-    bound = registry.bind(
-        "datamodel_files",
-        CompositionContext(components=components, base_dir=tmp_path),
-        {"model_path": "fixtures/model.toml", "data_path": "fixtures/data.json"},
+def test_two_roots_have_isolated_datamodel_registries(tmp_path: Path) -> None:
+    compositions, first = datamodel_files_component(tmp_path)
+    second = compositions.create_instance(
+        CompositionInstanceSpec(
+            id="other",
+            use="dix/examples/files/datamodel_files",
+            config={},
+            config_base_dir=tmp_path,
+        ),
+        owner_scope_id="test",
     )
-    payload = bound.invoke("run")
 
-    assert payload["compatible"] is True
-    assert payload["values"]["age"] == 42
-    assert components.require("datamodel", DatamodelComponent).registration_count == 1
-    with pytest.raises(CompositionOperationNotFound, match="does not expose"):
-        bound.invoke("missing")
+    first.api.register_model(write_model(tmp_path / "model.toml"))
+
+    assert first.runtime.datamodel is not second.runtime.datamodel
+    assert first.runtime.datamodel.registration_count == 1
+    assert second.runtime.datamodel.registration_count == 0
 
 
-def test_registry_is_an_explicit_factory_allowlist(tmp_path: Path) -> None:
-    registry = CompositionRegistry()
-    factory = DatamodelFilesFactory()
-    registry.register(factory)
+def test_unknown_definition_is_rejected_without_legacy_factory_lookup(tmp_path: Path) -> None:
+    registry = create_core_component_registry()
+    compositions = registry.require("composition", CompositionComponent)
 
-    assert registry.ids() == ("datamodel_files",)
-    assert registry.require("datamodel_files") is factory
-    with pytest.raises(CompositionError, match="already registered"):
-        registry.register(DatamodelFilesFactory())
-    with pytest.raises(CompositionError, match="not found"):
-        registry.bind(
-            "arbitrary.module.Factory",
-            CompositionContext(
-                components=create_core_component_registry(),
-                base_dir=tmp_path,
-            ),
-            {},
+    with pytest.raises(CompositionComponentError, match="definition is not loaded"):
+        compositions.create_instance(
+            CompositionInstanceSpec("bad", "arbitrary/module/factory", {}, tmp_path),
+            owner_scope_id="test",
         )

@@ -64,10 +64,10 @@ def validate_runtime_constructor(runtime_type: type[object], aliases: tuple[str,
         for parameter in parameters
         if parameter.kind is not inspect.Parameter.KEYWORD_ONLY
     ]
-    if actual != expected or invalid_kinds:
+    if set(actual) != set(expected) or len(actual) != len(expected) or invalid_kinds:
         raise CompositionRuntimeError(
-            f"Runtime constructor for dependencies {expected!r} must contain exactly "
-            f"keyword-only parameters in that order; got {signature}"
+            f"Runtime constructor must contain exactly the keyword-only parameters "
+            f"{expected!r}; got {signature}"
         )
 
 
@@ -88,7 +88,7 @@ def describe_runtime_functions(
     runtime_type: type[object],
 ) -> tuple[CompositionFunctionDescriptor, ...]:
     descriptors: list[CompositionFunctionDescriptor] = []
-    for function_id, (origin_value, function_spec) in sorted(
+    for function_id, (origin_value, _function_spec) in sorted(
         function_origins(definition).items()
     ):
         raw_method = runtime_type.__dict__.get(function_id)
@@ -113,8 +113,7 @@ def describe_runtime_functions(
                 origin=origin,
                 signature=public_signature,
                 return_annotation=public_signature.return_annotation,
-                docstring=inspect.getdoc(raw_method)
-                or (function_spec.description if function_spec is not None else None),
+                docstring=inspect.getdoc(raw_method),
                 is_async=inspect.iscoroutinefunction(raw_method),
             )
         )

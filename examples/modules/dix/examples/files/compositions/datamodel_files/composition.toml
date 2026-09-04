@@ -1,0 +1,14 @@
+[composition]
+id = "datamodel_files"
+
+[components]
+datamodel = "datamodel"
+
+[functions.register_model]
+description = "Register one TOML model source in this composition instance."
+
+[functions.load_data]
+description = "Load one JSON data envelope against a registered model."
+
+[functions.run]
+description = "Run the configured side-effect-free file demo."

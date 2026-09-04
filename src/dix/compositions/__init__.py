@@ -1,33 +1,16 @@
-"""Trusted, in-process compositions built from dix core capabilities."""
+"""Composition authoring, scaffolding, and generator helpers."""
 
-from .base import (
-    BoundComposition,
-    CompositionContext,
-    CompositionError,
-    CompositionFactory,
-    CompositionNotFound,
-    CompositionOperation,
-    CompositionOperationNotFound,
+from .generator import CompositionGeneratorError, generate_runtime
+from .scaffold import (
+    CompositionScaffoldError,
+    create_composition_scaffold,
+    create_module_scaffold,
 )
-from .datamodel_files import (
-    DatamodelFilesComposition,
-    DatamodelFilesError,
-    DatamodelFilesFactory,
-    model_result_payload,
-)
-from .registry import CompositionRegistry
 
 __all__ = [
-    "BoundComposition",
-    "CompositionContext",
-    "CompositionError",
-    "CompositionFactory",
-    "CompositionNotFound",
-    "CompositionOperation",
-    "CompositionOperationNotFound",
-    "CompositionRegistry",
-    "DatamodelFilesComposition",
-    "DatamodelFilesError",
-    "DatamodelFilesFactory",
-    "model_result_payload",
+    "CompositionGeneratorError",
+    "CompositionScaffoldError",
+    "create_composition_scaffold",
+    "create_module_scaffold",
+    "generate_runtime",
 ]

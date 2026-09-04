@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import dix.server as server_module
+from dix.config import load_effective_config
 from dix.server import create_app
 
 
@@ -104,3 +107,28 @@ def test_reference_renderer_path_is_configurable(tmp_path: Path) -> None:
     client = TestClient(create_app(app_config(tmp_path, reference_renderer_path="/ui")))
     assert client.get("/ui/demo_request").status_code == 200
     assert client.get("/render/demo_request").status_code == 404
+
+
+def test_serve_preserves_source_directory_for_relative_module_roots(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module_root = Path(__file__).resolve().parents[1] / "examples" / "modules"
+    config_path = tmp_path / "dix.toml"
+    relative_root = os.path.relpath(module_root, tmp_path)
+    config_path.write_text(
+        "[composition]\n"
+        f'trusted_module_roots = ["{relative_root}"]\n'
+    )
+    effective = load_effective_config(paths=[config_path], env={})
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(server_module, "load_effective_config", lambda: effective)
+    monkeypatch.setattr(
+        "uvicorn.run",
+        lambda app, **kwargs: calls.update(app=app, kwargs=kwargs),
+    )
+
+    assert server_module.serve() == 0
+    app = calls["app"]
+    assert app.state.composition_component.require_module("dix/examples/files")

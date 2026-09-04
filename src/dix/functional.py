@@ -5,13 +5,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from dix.compositions import (
-    BoundComposition,
-    CompositionContext,
-    CompositionError,
-    CompositionRegistry,
-)
-from dix.core import ComponentRegistry
+from dix.core import CompositionComponent
+from dix.core.composition import CompositionInstance, CompositionInstanceSpec
 from dix.models import InterfaceSpec
 
 
@@ -26,13 +21,14 @@ class InterfaceFunctionNotFound(FunctionalInterfaceError):
 @dataclass(frozen=True)
 class FunctionBinding:
     composition_id: str
-    operation_id: str
+    function_id: str
 
 
 @dataclass(frozen=True)
 class FunctionalInterfaceRuntime:
     interface_id: str
-    compositions: Mapping[str, BoundComposition]
+    owner_scope_id: str
+    compositions: Mapping[str, CompositionInstance]
     functions: Mapping[str, FunctionBinding]
 
     def __post_init__(self) -> None:
@@ -46,19 +42,19 @@ class FunctionalInterfaceRuntime:
             raise InterfaceFunctionNotFound(
                 f"function not found in interface '{self.interface_id}': {function_id}"
             ) from exc
-        return self.compositions[binding.composition_id].invoke(binding.operation_id)
+        try:
+            return self.compositions[binding.composition_id].api.require(binding.function_id)()
+        except Exception as exc:
+            raise FunctionalInterfaceError(
+                f"function '{function_id}' failed in interface '{self.interface_id}': {exc}"
+            ) from exc
 
 
 class FunctionalRuntimeStore:
-    """Binds trusted compositions once per concrete interface source."""
+    """Bind stable composition root graphs once per concrete interface source."""
 
-    def __init__(
-        self,
-        components: ComponentRegistry,
-        compositions: CompositionRegistry,
-    ) -> None:
-        self._components = components
-        self._composition_registry = compositions
+    def __init__(self, compositions: CompositionComponent) -> None:
+        self._composition_component = compositions
         self._items: dict[tuple[str, str], FunctionalInterfaceRuntime] = {}
 
     def get_or_create(self, spec: InterfaceSpec) -> FunctionalInterfaceRuntime:
@@ -68,52 +64,73 @@ class FunctionalRuntimeStore:
         return self._items[key]
 
     def _bind(self, spec: InterfaceSpec) -> FunctionalInterfaceRuntime:
-        base_dir = Path(spec.source).resolve().parent if spec.source else Path.cwd().resolve()
-        context = CompositionContext(components=self._components, base_dir=base_dir)
-        bound: dict[str, BoundComposition] = {}
+        if spec.compositions and not spec.source:
+            raise FunctionalInterfaceError(
+                f"interface '{spec.interface.id}' requires an explicit source for composition config"
+            )
+        base_dir = Path(spec.source).resolve().parent if spec.source else Path("/")
+        owner_scope_id = f"interface:{spec.source or '<memory>'}:{spec.interface.id}"
+        bound: dict[str, CompositionInstance] = {}
         try:
             for composition in spec.compositions:
-                bound[composition.id] = self._composition_registry.bind(
-                    composition.use,
-                    context,
-                    composition.config,
+                instance = self._composition_component.create_instance(
+                    CompositionInstanceSpec(
+                        id=composition.id,
+                        use=composition.use,
+                        config=composition.config,
+                        config_base_dir=base_dir,
+                    ),
+                    owner_scope_id=owner_scope_id,
                 )
-        except CompositionError as exc:
+                self._composition_component.start_instance(owner_scope_id, composition.id)
+                bound[composition.id] = instance
+            functions: dict[str, FunctionBinding] = {}
+            for function in spec.functions:
+                composition_id, function_id = _parse_call(function.call, function.id)
+                try:
+                    target = bound[composition_id]
+                except KeyError as exc:
+                    raise FunctionalInterfaceError(
+                        f"function '{function.id}' references unknown composition instance "
+                        f"'{composition_id}'"
+                    ) from exc
+                try:
+                    target.api.describe(function_id)
+                except Exception as exc:
+                    raise FunctionalInterfaceError(
+                        f"function '{function.id}' references unknown function "
+                        f"'{function_id}' on composition instance '{composition_id}'"
+                    ) from exc
+                functions[function.id] = FunctionBinding(
+                    composition_id=composition_id,
+                    function_id=function_id,
+                )
+            return FunctionalInterfaceRuntime(
+                interface_id=spec.interface.id,
+                owner_scope_id=owner_scope_id,
+                compositions=bound,
+                functions=functions,
+            )
+        except Exception as exc:
+            for composition_id in reversed(tuple(bound)):
+                try:
+                    self._composition_component.destroy_instance(
+                        owner_scope_id,
+                        composition_id,
+                    )
+                except Exception:
+                    pass
+            if isinstance(exc, FunctionalInterfaceError):
+                raise
             raise FunctionalInterfaceError(
                 f"cannot bind interface '{spec.interface.id}': {exc}"
             ) from exc
-
-        functions: dict[str, FunctionBinding] = {}
-        for function in spec.functions:
-            composition_id, operation_id = _parse_call(function.call, function.id)
-            try:
-                target = bound[composition_id]
-            except KeyError as exc:
-                raise FunctionalInterfaceError(
-                    f"function '{function.id}' references unknown composition instance "
-                    f"'{composition_id}'"
-                ) from exc
-            if operation_id not in target.operations:
-                raise FunctionalInterfaceError(
-                    f"function '{function.id}' references unknown operation "
-                    f"'{operation_id}' on composition instance '{composition_id}'"
-                )
-            functions[function.id] = FunctionBinding(
-                composition_id=composition_id,
-                operation_id=operation_id,
-            )
-
-        return FunctionalInterfaceRuntime(
-            interface_id=spec.interface.id,
-            compositions=bound,
-            functions=functions,
-        )
 
 
 def _parse_call(call: str, function_id: str) -> tuple[str, str]:
     parts = call.split(".")
     if len(parts) != 2 or not all(part.strip() for part in parts):
         raise FunctionalInterfaceError(
-            f"function '{function_id}' call must be '<composition>.<operation>'"
+            f"function '{function_id}' call must be '<composition>.<function>'"
         )
     return parts[0].strip(), parts[1].strip()
