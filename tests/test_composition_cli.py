@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+import json
+import tomllib
+from pathlib import Path
+
+import pytest
+
+from dix.cli import main
+
+
+def write_composition(module: Path, local_id: str, body: str, runtime: str) -> None:
+    root = module / "compositions" / local_id
+    root.mkdir(parents=True)
+    (root / "composition.toml").write_text(body)
+    (root / "runtime.py").write_text(runtime)
+
+
+def configured_project(tmp_path: Path) -> Path:
+    modules = tmp_path / "modules"
+    module = modules / "acme" / "demo"
+    write_composition(
+        module,
+        "base",
+        """[composition]
+id = "base"
+[functions.echo]
+description = "Echo a value."
+""",
+        """class Runtime:
+    def __init__(self, *, context, config): pass
+    def echo(self, value: str) -> str:
+        return value
+""",
+    )
+    write_composition(
+        module,
+        "child",
+        """[composition]
+id = "child"
+[components]
+model = "datamodel"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+""",
+        """class Runtime:
+    def __init__(self, *, context, config, model, base): pass
+    def echo(self, value: str) -> str:
+        return self.base.echo(value)
+""",
+    )
+    (tmp_path / "dix.toml").write_text(
+        '[composition]\ntrusted_module_roots = ["modules"]\n'
+    )
+    return module
+
+
+def test_module_and_composition_json_introspection(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    configured_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["module", "list", "--json"]) == 0
+    modules = json.loads(capsys.readouterr().out)
+    assert modules[0]["id"] == "acme/demo"
+    assert modules[0]["composition_ids"] == ["acme/demo/base", "acme/demo/child"]
+
+    assert main(["module", "show", "acme/demo", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown == modules[0]
+
+    assert main(["module", "graph", "acme/demo", "--json"]) == 0
+    graph = json.loads(capsys.readouterr().out)
+    child_graph = next(item for item in graph["graphs"] if item["root"] == "acme/demo/child")
+    assert child_graph["edges"] == [
+        {
+            "alias": "model",
+            "kind": "component",
+            "source": "acme/demo/child",
+            "target": "datamodel",
+        },
+        {
+            "alias": "base",
+            "kind": "composition",
+            "source": "acme/demo/child",
+            "target": "acme/demo/base",
+        },
+    ]
+
+    assert main(["composition", "list", "--json"]) == 0
+    definitions = json.loads(capsys.readouterr().out)
+    assert [item["id"] for item in definitions] == ["acme/demo/base", "acme/demo/child"]
+
+    assert main(["composition", "functions", "acme/demo/child", "--json"]) == 0
+    functions = json.loads(capsys.readouterr().out)
+    assert functions[0]["origin"] == "base.echo"
+    assert functions[0]["signature"] == "(value: str) -> str"
+
+    assert main(["composition", "show", "acme/demo/child", "--json"]) == 0
+    shown_composition = json.loads(capsys.readouterr().out)
+    assert shown_composition["definition"]["id"] == "acme/demo/child"
+    assert shown_composition["functions"] == functions
+
+    assert main(["composition", "instance", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_human_introspection_contains_same_id_origin_and_signature(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    configured_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["module", "list"]) == 0
+    assert "acme/demo" in capsys.readouterr().out
+    assert main(["composition", "functions", "acme/demo/child"]) == 0
+    output = capsys.readouterr().out
+    assert "base.echo" in output
+    assert "(value: str) -> str" in output
+
+
+def test_module_inspect_is_static_and_requires_explicit_id(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    module = tmp_path / "candidate"
+    marker = tmp_path / "imported"
+    write_composition(
+        module,
+        "item",
+        '[composition]\nid = "item"\n',
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\nclass Runtime: pass\n",
+    )
+
+    assert main(["module", "inspect", str(module), "--id", "external/demo", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["id"] == "external/demo"
+    assert payload["definitions"][0]["id"] == "external/demo/item"
+    assert marker.exists() is False
+
+
+def test_module_and_composition_scaffolds_are_small_and_non_overwriting(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    root = tmp_path / "modules"
+    assert main(["module", "new", "--id", "my/new_stuff", "--root", str(root)]) == 0
+    module = root / "my" / "new_stuff"
+    assert (module / "compositions").is_dir()
+    assert (module / "module.toml").exists() is False
+    capsys.readouterr()
+
+    command = [
+        "composition",
+        "new",
+        "--module",
+        str(module),
+        "--id",
+        "processor",
+        "--component",
+        "model=datamodel",
+        "--composition",
+        "base=acme/demo/base",
+        "--export",
+        "base.echo",
+        "--export",
+        "base.echo=echo_alias",
+        "--function",
+        "local_value",
+    ]
+    assert main(command) == 0
+    spec_path = module / "compositions" / "processor" / "composition.toml"
+    payload = tomllib.loads(spec_path.read_text())
+    assert payload["components"] == {"model": "datamodel"}
+    assert payload["compositions"]["base"] == {
+        "use": "acme/demo/base",
+        "export": ["echo"],
+    }
+    assert payload["functions"]["echo_alias"]["export"] == "base.echo"
+    assert "TODO" in payload["functions"]["local_value"]["description"]
+    assert (spec_path.parent / "runtime.py").exists() is False
+    original = spec_path.read_text()
+    capsys.readouterr()
+
+    assert main(command) == 2
+    assert "already exists" in capsys.readouterr().err
+    assert spec_path.read_text() == original
+    assert main(["module", "new", "--id", "my/new_stuff", "--root", str(root)]) == 2
+
+
+def test_scaffold_collision_writes_no_partial_composition(tmp_path: Path, capsys) -> None:
+    module = tmp_path / "module"
+    (module / "compositions").mkdir(parents=True)
+
+    result = main(
+        [
+            "composition",
+            "new",
+            "--module",
+            str(module),
+            "--id",
+            "broken",
+            "--composition",
+            "base=acme/demo/base",
+            "--export",
+            "base.echo",
+            "--function",
+            "echo",
+        ]
+    )
+
+    assert result == 2
+    assert "duplicate effective function" in capsys.readouterr().err
+    assert (module / "compositions" / "broken").exists() is False
+
+
+def test_export_all_expands_authoritative_dependency_functions(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    configured_project(tmp_path)
+    target = tmp_path / "target"
+    (target / "compositions").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(
+        [
+            "composition",
+            "new",
+            "--module",
+            str(target),
+            "--id",
+            "consumer",
+            "--composition",
+            "base=acme/demo/base",
+            "--export-all",
+            "base",
+        ]
+    ) == 0
+    capsys.readouterr()
+    payload = tomllib.loads(
+        (target / "compositions" / "consumer" / "composition.toml").read_text()
+    )
+    assert payload["compositions"]["base"]["export"] == ["echo"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["module", "new", "--help"],
+        ["module", "list", "--help"],
+        ["module", "show", "--help"],
+        ["module", "inspect", "--help"],
+        ["module", "graph", "--help"],
+        ["composition", "new", "--help"],
+        ["composition", "list", "--help"],
+        ["composition", "show", "--help"],
+        ["composition", "functions", "--help"],
+        ["composition", "instance", "list", "--help"],
+    ],
+)
+def test_composition_commands_have_help(argv: list[str], capsys) -> None:
+    with pytest.raises(SystemExit, match="0"):
+        main(argv)
+    assert "usage:" in capsys.readouterr().out
