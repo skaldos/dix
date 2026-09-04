@@ -3,20 +3,33 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from dix.core.registry import ComponentRegistry
 
 from .models import (
     CompositionDefinition,
+    CompositionDescriptor,
     CompositionDependencyEdge,
     CompositionDependencyGraph,
+    CompositionFunctionDescriptor,
+    CompositionInstance,
+    CompositionInstanceSpec,
+    CompositionRuntimeContext,
     LoadedCompositionDefinition,
     LoadedModule,
     ModuleDescriptor,
     ModuleInspection,
+)
+from .runtime import (
+    CompositionApi,
+    CompositionRuntimeError,
+    create_api,
+    describe_runtime_functions,
+    validate_runtime_constructor,
 )
 from .spec import discover_modules, inspect_module, inspect_spec
 
@@ -35,6 +48,8 @@ class CompositionComponent:
         self._import_namespace = uuid4().hex
         self._modules: dict[str, LoadedModule] = {}
         self._definitions: dict[str, LoadedCompositionDefinition] = {}
+        self._instances: dict[tuple[str, str], CompositionInstance] = {}
+        self._root_graphs: dict[tuple[str, str], tuple[str, ...]] = {}
 
     def inspect_spec(self, path: Path, *, module_id: str) -> CompositionDefinition:
         return inspect_spec(path, module_id=module_id)
@@ -113,6 +128,23 @@ class CompositionComponent:
                         f"module '{module_id}' is required by loaded composition "
                         f"'{definition_id}'"
                     )
+        owned_graphs: list[tuple[str, str]] = []
+        for graph_key, instance_ids in self._root_graphs.items():
+            root = self._instances[(graph_key[0], graph_key[1])]
+            graph_uses_target = any(
+                self._instances[(graph_key[0], instance_id)].definition_id in owned_ids
+                for instance_id in instance_ids
+            )
+            if not graph_uses_target:
+                continue
+            if root.module_id != module_id:
+                raise CompositionComponentError(
+                    f"module '{module_id}' is used by externally rooted instance graph "
+                    f"'{root.scope_id}/{root.id}'"
+                )
+            owned_graphs.append(graph_key)
+        for scope_id, root_instance_id in owned_graphs:
+            self.destroy_instance(scope_id, root_instance_id)
         del self._modules[module_id]
         for definition_id, definition in loaded.compositions.items():
             del self._definitions[definition_id]
@@ -200,6 +232,199 @@ class CompositionComponent:
             ),
         )
 
+    def create_instance(
+        self,
+        spec: CompositionInstanceSpec,
+        *,
+        owner_scope_id: str,
+    ) -> CompositionInstance:
+        owner_scope = owner_scope_id.strip()
+        if not owner_scope:
+            raise CompositionComponentError("owner scope id must not be empty")
+        root_key = (owner_scope, spec.id)
+        if root_key in self._root_graphs or root_key in self._instances:
+            raise CompositionComponentError(
+                f"composition root instance already exists: {owner_scope}/{spec.id}"
+            )
+        try:
+            self._validate_runtime_graph(spec.use)
+        except Exception as exc:
+            raise CompositionComponentError(
+                f"cannot create composition instance '{owner_scope}/{spec.id}': {exc}"
+            ) from exc
+        staged: dict[str, CompositionInstance] = {}
+
+        def build(
+            definition_id: str,
+            instance_id: str,
+            config: Mapping[str, Any],
+            config_base_dir: Path,
+            parent_instance_id: str | None,
+        ) -> CompositionInstance:
+            loaded_definition = self._require_loaded_definition(definition_id)
+            definition = loaded_definition.definition
+            component_scope = self._components.create_scope(
+                f"composition:{owner_scope}:{instance_id}"
+            )
+            child_apis: dict[str, CompositionApi] = {}
+            injected: dict[str, object] = {}
+            for alias, component_id in sorted(definition.components.items()):
+                injected[alias] = component_scope.require(component_id, object)
+            for alias, dependency in sorted(definition.compositions.items()):
+                child_id = f"{instance_id}/{alias}"
+                child = build(
+                    dependency.use,
+                    child_id,
+                    dict(dependency.config),
+                    definition.composition_root,
+                    instance_id,
+                )
+                child_apis[alias] = child.api
+                injected[alias] = child.api
+            aliases = tuple((*sorted(definition.components), *sorted(definition.compositions)))
+            validate_runtime_constructor(loaded_definition.runtime_type, aliases)
+            context = CompositionRuntimeContext(
+                instance_id=instance_id,
+                composition_id=definition.id,
+                module_id=definition.module_id,
+                module_root=definition.module_root,
+                composition_root=definition.composition_root,
+                config_base_dir=config_base_dir.expanduser().resolve(),
+                owner_scope_id=owner_scope,
+            )
+            try:
+                runtime = loaded_definition.runtime_type(
+                    context=context,
+                    config=config,
+                    **injected,
+                )
+                api = create_api(definition, runtime, child_apis)
+            except CompositionRuntimeError:
+                raise
+            except Exception as exc:
+                raise CompositionRuntimeError(
+                    f"cannot create composition runtime '{definition.id}': {exc}"
+                ) from exc
+            instance = CompositionInstance(
+                id=instance_id,
+                definition_id=definition.id,
+                module_id=definition.module_id,
+                scope_id=owner_scope,
+                root_instance_id=spec.id,
+                parent_instance_id=parent_instance_id,
+                runtime=runtime,
+                api=api,
+                context=context,
+            )
+            staged[instance_id] = instance
+            return instance
+
+        try:
+            root = build(
+                spec.use,
+                spec.id,
+                dict(spec.config),
+                spec.config_base_dir,
+                None,
+            )
+        except Exception as exc:
+            raise CompositionComponentError(
+                f"cannot create composition instance '{owner_scope}/{spec.id}': {exc}"
+            ) from exc
+        for instance_id, instance in staged.items():
+            self._instances[(owner_scope, instance_id)] = instance
+        self._root_graphs[root_key] = tuple(staged)
+        return root
+
+    def destroy_instance(self, scope_id: str, instance_id: str) -> None:
+        key = (scope_id, instance_id)
+        try:
+            graph = self._root_graphs[key]
+        except KeyError as exc:
+            if key in self._instances:
+                raise CompositionComponentError(
+                    f"only root composition instances can be destroyed: {scope_id}/{instance_id}"
+                ) from exc
+            raise CompositionComponentError(
+                f"composition root instance not found: {scope_id}/{instance_id}"
+            ) from exc
+        for graph_instance_id in reversed(graph):
+            del self._instances[(scope_id, graph_instance_id)]
+        del self._root_graphs[key]
+
+    def instances(self, *, scope_id: str | None = None) -> tuple[CompositionInstance, ...]:
+        values = (
+            instance
+            for (candidate_scope, _), instance in self._instances.items()
+            if scope_id is None or candidate_scope == scope_id
+        )
+        return tuple(sorted(values, key=lambda item: (item.scope_id, item.id)))
+
+    def require_instance(self, scope_id: str, instance_id: str) -> CompositionInstance:
+        try:
+            return self._instances[(scope_id, instance_id)]
+        except KeyError as exc:
+            raise CompositionComponentError(
+                f"composition instance not found: {scope_id}/{instance_id}"
+            ) from exc
+
+    def describe_composition(self, composition_id: str) -> CompositionDescriptor:
+        loaded_definition = self._require_loaded_definition(composition_id)
+        module = self.require_module(loaded_definition.definition.module_id)
+        return CompositionDescriptor(
+            definition=loaded_definition.definition,
+            functions=describe_runtime_functions(
+                loaded_definition.definition,
+                loaded_definition.runtime_type,
+            ),
+            module=ModuleDescriptor(
+                id=module.inspection.id,
+                root=module.inspection.root,
+                artifact_digest=module.inspection.artifact_digest,
+                loaded=True,
+                composition_ids=tuple(sorted(module.compositions)),
+            ),
+        )
+
+    def describe_function(
+        self,
+        composition_id: str,
+        function_id: str,
+    ) -> CompositionFunctionDescriptor:
+        for descriptor in self.describe_composition(composition_id).functions:
+            if descriptor.id == function_id:
+                return descriptor
+        raise CompositionComponentError(
+            f"composition function is not declared: {composition_id}.{function_id}"
+        )
+
+    def _validate_runtime_graph(self, composition_id: str) -> None:
+        graph = self.describe_dependency_graph(composition_id)
+        descriptors: dict[str, set[str]] = {}
+        for definition_id in graph.nodes:
+            loaded = self._require_loaded_definition(definition_id)
+            definition = loaded.definition
+            aliases = tuple((*sorted(definition.components), *sorted(definition.compositions)))
+            validate_runtime_constructor(loaded.runtime_type, aliases)
+            descriptors[definition_id] = {
+                item.id for item in describe_runtime_functions(definition, loaded.runtime_type)
+            }
+        for definition_id in graph.nodes:
+            definition = self.require_definition(definition_id)
+            for descriptor in describe_runtime_functions(
+                definition,
+                self._require_loaded_definition(definition_id).runtime_type,
+            ):
+                if descriptor.origin is None:
+                    continue
+                alias, function_id = descriptor.origin.split(".", 1)
+                target = definition.compositions[alias].use
+                if function_id not in descriptors[target]:
+                    raise CompositionRuntimeError(
+                        f"wrapper origin '{descriptor.origin}' in '{definition_id}' refers to "
+                        f"undeclared function '{target}.{function_id}'"
+                    )
+
     def _require_loaded_definition(self, composition_id: str) -> LoadedCompositionDefinition:
         try:
             return self._definitions[composition_id]
@@ -239,3 +464,8 @@ class CompositionComponent:
             sys.modules.pop(module_name, None)
             raise
         return runtime_type, module_name
+    CompositionDescriptor,
+    CompositionFunctionDescriptor,
+    CompositionInstance,
+    CompositionInstanceSpec,
+    CompositionRuntimeContext,
