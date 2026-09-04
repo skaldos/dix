@@ -25,14 +25,20 @@ from .datamodel import (
     RegisteredModelDescriptor,
 )
 from .registry import (
+    ComponentLifetime,
+    ComponentProvider,
     ComponentRegistry,
     ComponentRegistryError,
+    ComponentScope,
     create_core_component_registry,
 )
 
 __all__ = [
+    "ComponentLifetime",
+    "ComponentProvider",
     "ComponentRegistry",
     "ComponentRegistryError",
+    "ComponentScope",
     "create_core_component_registry",
     "DatamodelComponent",
     "DatamodelError",
