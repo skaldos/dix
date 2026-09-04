@@ -115,6 +115,7 @@ def describe_runtime_functions(
                 return_annotation=public_signature.return_annotation,
                 docstring=inspect.getdoc(raw_method)
                 or (function_spec.description if function_spec is not None else None),
+                is_async=inspect.iscoroutinefunction(raw_method),
             )
         )
     return tuple(descriptors)

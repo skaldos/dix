@@ -195,6 +195,7 @@ def _function_payload(descriptor) -> dict[str, Any]:
         "signature": str(descriptor.signature),
         "return_annotation": _annotation_text(descriptor.return_annotation),
         "docstring": descriptor.docstring,
+        "is_async": descriptor.is_async,
     }
 
 
@@ -297,6 +298,16 @@ def cmd_module(args: argparse.Namespace) -> int:
 def cmd_composition(args: argparse.Namespace) -> int:
     from .compositions.scaffold import create_composition_scaffold
 
+    if args.composition_cmd == "generate":
+        from .compositions.generator import generate_runtime
+
+        path = generate_runtime(
+            Path(args.path),
+            _composition_runtime(),
+            include_lifecycle=args.lifecycle,
+        )
+        print(f"created: {path}")
+        return 0
     if args.composition_cmd == "new":
         exports = list(args.export)
         if args.export_all:
@@ -452,6 +463,9 @@ def build_parser() -> argparse.ArgumentParser:
     composition_new.add_argument("--export", action="append", default=[])
     composition_new.add_argument("--export-all", action="append", default=[])
     composition_new.add_argument("--function", action="append", default=[])
+    composition_generate = composition_sub.add_parser("generate")
+    composition_generate.add_argument("path")
+    composition_generate.add_argument("--lifecycle", action="store_true")
     composition.set_defaults(func=cmd_composition)
 
     serve = sub.add_parser("serve")
@@ -474,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         from .assembly import CompositionAssemblyError
         from .compositions.scaffold import CompositionScaffoldError
+        from .compositions.generator import CompositionGeneratorError
         from .core.composition import (
             CompositionComponentError,
             CompositionRuntimeError,
@@ -487,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
                 CompositionComponentError,
                 CompositionRuntimeError,
                 CompositionScaffoldError,
+                CompositionGeneratorError,
                 CompositionSpecError,
             ),
         ):

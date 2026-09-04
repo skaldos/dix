@@ -32,6 +32,22 @@ class CompositionFunctionSpec:
 
 
 @dataclass(frozen=True)
+class CompositionSource:
+    local_id: str
+    module_root: Path
+    composition_root: Path
+    spec_path: Path
+    components: Mapping[str, str] = field(default_factory=dict)
+    compositions: Mapping[str, CompositionDependencySpec] = field(default_factory=dict)
+    functions: Mapping[str, CompositionFunctionSpec] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "components", MappingProxyType(dict(self.components)))
+        object.__setattr__(self, "compositions", MappingProxyType(dict(self.compositions)))
+        object.__setattr__(self, "functions", MappingProxyType(dict(self.functions)))
+
+
+@dataclass(frozen=True)
 class CompositionDefinition:
     id: str
     local_id: str
@@ -135,6 +151,7 @@ class CompositionFunctionDescriptor:
     signature: inspect.Signature
     return_annotation: object
     docstring: str | None
+    is_async: bool = False
 
 
 @dataclass(frozen=True)

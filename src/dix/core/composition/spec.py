@@ -12,6 +12,7 @@ from .models import (
     CompositionDefinition,
     CompositionDependencySpec,
     CompositionFunctionSpec,
+    CompositionSource,
     ModuleInspection,
 )
 
@@ -29,6 +30,25 @@ class CompositionSpecError(Exception):
 def inspect_spec(path: Path, *, module_id: str) -> CompositionDefinition:
     """Inspect one composition source without importing its runtime module."""
     normalized_module_id = normalize_module_id(module_id)
+    source = inspect_composition_source(path)
+    runtime_path = source.composition_root / "runtime.py"
+    _canonical_file(runtime_path, root=source.module_root, label="composition runtime")
+    return CompositionDefinition(
+        id=f"{normalized_module_id}/{source.local_id}",
+        local_id=source.local_id,
+        module_id=normalized_module_id,
+        module_root=source.module_root,
+        composition_root=source.composition_root,
+        spec_path=source.spec_path,
+        runtime_path=runtime_path.resolve(strict=True),
+        components=source.components,
+        compositions=source.compositions,
+        functions=source.functions,
+    )
+
+
+def inspect_composition_source(path: Path) -> CompositionSource:
+    """Parse one unqualified source spec without requiring generated runtime code."""
     spec_path = _canonical_file(path, label="composition spec")
     if spec_path.name != "composition.toml":
         raise CompositionSpecError(f"composition spec must be named composition.toml: {spec_path}")
@@ -40,9 +60,6 @@ def inspect_spec(path: Path, *, module_id: str) -> CompositionDefinition:
             f"composition spec must be directly below a compositions directory: {spec_path}"
         )
     _require_contained(composition_root, module_root, label="composition root")
-    runtime_path = composition_root / "runtime.py"
-    _canonical_file(runtime_path, root=module_root, label="composition runtime")
-
     try:
         raw = tomllib.loads(spec_path.read_text())
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
@@ -72,14 +89,11 @@ def inspect_spec(path: Path, *, module_id: str) -> CompositionDefinition:
     functions = _parse_functions(raw.get("functions", {}), compositions)
     _validate_function_names(compositions, functions)
 
-    return CompositionDefinition(
-        id=f"{normalized_module_id}/{local_id}",
+    return CompositionSource(
         local_id=local_id,
-        module_id=normalized_module_id,
         module_root=module_root,
         composition_root=composition_root,
         spec_path=spec_path,
-        runtime_path=runtime_path.resolve(strict=True),
         components=components,
         compositions=compositions,
         functions=functions,

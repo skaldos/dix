@@ -251,6 +251,34 @@ def test_export_all_expands_authoritative_dependency_functions(
     assert payload["compositions"]["base"]["export"] == ["echo"]
 
 
+def test_composition_generate_cli_uses_loaded_dependency_descriptors(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    configured_project(tmp_path)
+    target = tmp_path / "target"
+    source = target / "compositions" / "consumer"
+    source.mkdir(parents=True)
+    spec = source / "composition.toml"
+    spec.write_text(
+        """[composition]
+id = "consumer"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+"""
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["composition", "generate", str(spec)]) == 0
+
+    output = capsys.readouterr().out
+    assert "runtime.py" in output
+    generated = (source / "runtime.py").read_text()
+    assert "def echo(self, value: str) -> str:" in generated
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -263,6 +291,7 @@ def test_export_all_expands_authoritative_dependency_functions(
         ["composition", "list", "--help"],
         ["composition", "show", "--help"],
         ["composition", "functions", "--help"],
+        ["composition", "generate", "--help"],
         ["composition", "instance", "list", "--help"],
     ],
 )
