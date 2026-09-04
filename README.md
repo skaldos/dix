@@ -130,7 +130,11 @@ dix composition generate \
 ```
 
 Scaffolding and generation never overwrite existing files. The generator obtains dependency signatures
-from the live `CompositionComponent`; signatures are not copied into TOML specs.
+from the live runtime code of the explicitly referenced compositions below configured trusted roots;
+signatures are not copied into TOML specs. Build-time dependency resolution is composition-granular, so
+a runtime can be generated while its target module bundle is still incomplete. Normal runtime loading
+remains atomic at module level. Generation imports the referenced dependency runtimes and therefore
+executes trusted Python module code; configure trusted module roots accordingly.
 
 ## Direct Python smoke
 

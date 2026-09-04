@@ -1,6 +1,8 @@
 """Composition authoring, scaffolding, and generator helpers."""
 
-from .generator import CompositionGeneratorError, generate_runtime
+from .errors import CompositionGeneratorError
+from .generator import generate_runtime
+from .resolver import TrustedBuildFunctionResolver
 from .scaffold import (
     CompositionScaffoldError,
     create_composition_scaffold,
@@ -10,6 +12,7 @@ from .scaffold import (
 __all__ = [
     "CompositionGeneratorError",
     "CompositionScaffoldError",
+    "TrustedBuildFunctionResolver",
     "create_composition_scaffold",
     "create_module_scaffold",
     "generate_runtime",

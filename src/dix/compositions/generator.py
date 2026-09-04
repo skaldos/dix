@@ -7,20 +7,18 @@ import tempfile
 from pathlib import Path
 
 from dix.core.composition import (
-    CompositionComponent,
     CompositionFunctionDescriptor,
     CompositionSource,
     inspect_composition_source,
 )
 
-
-class CompositionGeneratorError(Exception):
-    """Raised when a runtime source cannot be generated without guessing."""
+from .errors import CompositionGeneratorError
+from .resolver import CompositionFunctionResolver
 
 
 def generate_runtime(
     spec_path: Path,
-    compositions: CompositionComponent,
+    compositions: CompositionFunctionResolver,
     *,
     include_lifecycle: bool = False,
 ) -> Path:

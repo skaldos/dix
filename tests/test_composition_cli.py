@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -277,6 +278,177 @@ export = ["echo"]
     assert "runtime.py" in output
     generated = (source / "runtime.py").read_text()
     assert "def echo(self, value: str) -> str:" in generated
+
+
+def test_composition_generate_resolves_sibling_before_module_is_complete(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    modules = tmp_path / "modules"
+    module = modules / "acme" / "demo"
+    base = module / "compositions" / "base"
+    base.mkdir(parents=True)
+    (base / "composition.toml").write_text(
+        '[composition]\nid = "base"\n[functions.echo]\ndescription = "Echo."\n'
+    )
+    (base / "helper.py").write_text("PREFIX = 'base:'\n")
+    (base / "runtime.py").write_text(
+        "from .helper import PREFIX\n"
+        "class Runtime:\n"
+        "    def __init__(self, *, context, config): pass\n"
+        "    def echo(self, value: str) -> str: return PREFIX + value\n"
+    )
+    child = module / "compositions" / "child"
+    child.mkdir()
+    child_spec = child / "composition.toml"
+    child_spec.write_text(
+        """[composition]
+id = "child"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+"""
+    )
+    unrelated = module / "compositions" / "unfinished"
+    unrelated.mkdir()
+    (unrelated / "composition.toml").write_text(
+        '[composition]\nid = "unfinished"\n'
+    )
+    (tmp_path / "dix.toml").write_text(
+        '[composition]\ntrusted_module_roots = ["modules"]\n'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["composition", "generate", str(child_spec)]) == 0
+
+    assert "runtime.py" in capsys.readouterr().out
+    generated = (child / "runtime.py").read_text()
+    assert "def echo(self, value: str) -> str:" in generated
+    assert not any(name.startswith("_dix_build_") for name in sys.modules)
+
+
+def test_composition_generate_rejects_duplicate_dependency_across_trusted_roots(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    for root_name in ("one", "two"):
+        base = tmp_path / root_name / "acme" / "demo" / "compositions" / "base"
+        base.mkdir(parents=True)
+        (base / "composition.toml").write_text(
+            '[composition]\nid = "base"\n[functions.echo]\ndescription = "Echo."\n'
+        )
+        (base / "runtime.py").write_text(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            "    def echo(self): return None\n"
+        )
+    target = tmp_path / "target" / "compositions" / "child"
+    target.mkdir(parents=True)
+    spec = target / "composition.toml"
+    spec.write_text(
+        """[composition]
+id = "child"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+"""
+    )
+    (tmp_path / "dix.toml").write_text(
+        '[composition]\ntrusted_module_roots = ["one", "two"]\n'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["composition", "generate", str(spec)]) == 2
+
+    assert "duplicate composition dependency" in capsys.readouterr().err
+    assert (target / "runtime.py").exists() is False
+
+
+def test_composition_generate_rejects_unknown_dependency_component(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    modules = tmp_path / "modules"
+    base = modules / "acme" / "demo" / "compositions" / "base"
+    base.mkdir(parents=True)
+    (base / "composition.toml").write_text(
+        """[composition]
+id = "base"
+[components]
+unknown = "not_registered"
+[functions.echo]
+description = "Echo."
+"""
+    )
+    (base / "runtime.py").write_text(
+        "class Runtime:\n"
+        "    def __init__(self, *, context, config, unknown): pass\n"
+        "    def echo(self): return None\n"
+    )
+    target = modules / "acme" / "demo" / "compositions" / "child"
+    target.mkdir()
+    spec = target / "composition.toml"
+    spec.write_text(
+        """[composition]
+id = "child"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+"""
+    )
+    (tmp_path / "dix.toml").write_text(
+        '[composition]\ntrusted_module_roots = ["modules"]\n'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["composition", "generate", str(spec)]) == 2
+
+    assert "unknown component 'not_registered'" in capsys.readouterr().err
+    assert (target / "runtime.py").exists() is False
+
+
+def test_composition_generate_rejects_dependency_symlink_outside_trusted_module(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    external = tmp_path / "external" / "module" / "compositions" / "base"
+    external.mkdir(parents=True)
+    (external / "composition.toml").write_text(
+        '[composition]\nid = "base"\n[functions.echo]\ndescription = "Echo."\n'
+    )
+    (external / "runtime.py").write_text(
+        "class Runtime:\n"
+        "    def __init__(self, *, context, config): pass\n"
+        "    def echo(self): return None\n"
+    )
+    module = tmp_path / "modules" / "acme" / "demo"
+    compositions = module / "compositions"
+    compositions.mkdir(parents=True)
+    (compositions / "base").symlink_to(external, target_is_directory=True)
+    target = compositions / "child"
+    target.mkdir()
+    spec = target / "composition.toml"
+    spec.write_text(
+        """[composition]
+id = "child"
+[compositions.base]
+use = "acme/demo/base"
+export = ["echo"]
+"""
+    )
+    (tmp_path / "dix.toml").write_text(
+        '[composition]\ntrusted_module_roots = ["modules"]\n'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["composition", "generate", str(spec)]) == 2
+
+    assert "escapes trusted module root" in capsys.readouterr().err
+    assert (target / "runtime.py").exists() is False
 
 
 @pytest.mark.parametrize(

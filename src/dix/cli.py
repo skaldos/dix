@@ -300,12 +300,17 @@ def cmd_composition(args: argparse.Namespace) -> int:
 
     if args.composition_cmd == "generate":
         from .compositions.generator import generate_runtime
+        from .compositions.resolver import TrustedBuildFunctionResolver
 
-        path = generate_runtime(
-            Path(args.path),
-            _composition_runtime(),
-            include_lifecycle=args.lifecycle,
-        )
+        effective = load_effective_config()
+        with TrustedBuildFunctionResolver(
+            effective.composition.trusted_module_roots
+        ) as resolver:
+            path = generate_runtime(
+                Path(args.path),
+                resolver,
+                include_lifecycle=args.lifecycle,
+            )
         print(f"created: {path}")
         return 0
     if args.composition_cmd == "new":
@@ -487,8 +492,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except Exception as e:
         from .assembly import CompositionAssemblyError
+        from .compositions.errors import CompositionGeneratorError
         from .compositions.scaffold import CompositionScaffoldError
-        from .compositions.generator import CompositionGeneratorError
         from .core.composition import (
             CompositionComponentError,
             CompositionRuntimeError,
