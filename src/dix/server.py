@@ -8,8 +8,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from dix.compositions import CompositionError, CompositionRegistry, DatamodelFilesFactory
-from dix.config import DEFAULT_CONFIG, load_effective_config
-from dix.core import create_core_component_registry
+from dix.assembly import assemble_compositions
+from dix.config import (
+    DEFAULT_CONFIG,
+    EffectiveConfig,
+    composition_settings_from_values,
+    load_effective_config,
+)
 from dix.functional import (
     FunctionalInterfaceError,
     FunctionalRuntimeStore,
@@ -29,12 +34,22 @@ def _renderer_path(config: dict[str, Any]) -> str:
     return str(config["reference_renderer_path"]).rstrip("/")
 
 
-def create_app(config: dict[str, Any] | None = None) -> FastAPI:
-    cfg = {**DEFAULT_CONFIG, **(config or load_effective_config().values)}
+def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAPI:
+    if config is None:
+        effective = load_effective_config()
+        cfg = {**DEFAULT_CONFIG, **effective.values}
+        composition_settings = effective.composition
+    elif isinstance(config, EffectiveConfig):
+        cfg = {**DEFAULT_CONFIG, **config.values}
+        composition_settings = config.composition
+    else:
+        cfg = {**DEFAULT_CONFIG, **config}
+        composition_settings = composition_settings_from_values(cfg, base_dir=None)
     app = FastAPI(title="dix")
     store = RuntimeStore()
     renderer = HtmlRenderer()
-    capability_components = create_core_component_registry()
+    composition_assembly = assemble_compositions(composition_settings)
+    capability_components = composition_assembly.components
     composition_registry = CompositionRegistry()
     composition_registry.register(DatamodelFilesFactory())
     functional_store = FunctionalRuntimeStore(
@@ -42,6 +57,7 @@ def create_app(config: dict[str, Any] | None = None) -> FastAPI:
         compositions=composition_registry,
     )
     app.state.capability_components = capability_components
+    app.state.composition_component = composition_assembly.compositions
     app.state.composition_registry = composition_registry
     app.state.functional_store = functional_store
 

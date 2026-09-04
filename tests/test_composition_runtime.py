@@ -8,7 +8,7 @@ from dix.core import DatamodelComponent, CompositionComponent, create_core_compo
 from dix.core.composition import (
     CompositionComponentError,
     CompositionInstanceSpec,
-    CompositionRuntimeError,
+    CompositionLifecycleError,
 )
 
 
@@ -454,3 +454,185 @@ use = "test/base/base"
         compositions.unload_module("test/base")
 
     assert len(compositions.instances()) == 2
+
+
+def write_lifecycle_graph(
+    module: Path,
+    log: Path,
+    *,
+    child_start: str = "record('child.start')",
+    child_stop: str = "record('child.stop')",
+    root_start: str = "record('root.start')",
+    root_stop: str = "record('root.stop')",
+) -> None:
+    helper = (
+        "from pathlib import Path\n"
+        f"LOG = Path({str(log)!r})\n"
+        "def record(value):\n"
+        "    with LOG.open('a') as stream:\n"
+        "        stream.write(value + '\\n')\n"
+    )
+    write_composition(
+        module,
+        "child",
+        '[composition]\nid = "child"\n',
+        helper
+        + "class Runtime:\n"
+        + "    def __init__(self, *, context, config): pass\n"
+        + "    def start(self):\n"
+        + f"        {child_start}\n"
+        + "    def stop(self):\n"
+        + f"        {child_stop}\n",
+    )
+    write_composition(
+        module,
+        "root",
+        """[composition]
+id = "root"
+[compositions.child]
+use = "test/lifecycle/child"
+""",
+        helper
+        + "class Runtime:\n"
+        + "    def __init__(self, *, context, config, child): pass\n"
+        + "    def start(self):\n"
+        + f"        {root_start}\n"
+        + "    def stop(self):\n"
+        + f"        {root_stop}\n",
+    )
+
+
+def lifecycle_instance(
+    compositions: CompositionComponent,
+    module: Path,
+    tmp_path: Path,
+):
+    compositions.load_module(module, module_id="test/lifecycle")
+    return compositions.create_instance(
+        CompositionInstanceSpec("root", "test/lifecycle/root", {}, tmp_path),
+        owner_scope_id="owner",
+    )
+
+
+def test_lifecycle_starts_dependencies_first_and_stops_in_reverse(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    log = tmp_path / "events"
+    write_lifecycle_graph(module, log)
+    compositions = runtime_component()
+    root = lifecycle_instance(compositions, module, tmp_path)
+
+    compositions.start_instance("owner", "root")
+    assert root.state == "active"
+    assert log.read_text().splitlines() == ["child.start", "root.start"]
+
+    compositions.stop_instance("owner", "root")
+    assert root.state == "stopped"
+    assert log.read_text().splitlines() == [
+        "child.start",
+        "root.start",
+        "root.stop",
+        "child.stop",
+    ]
+    with pytest.raises(CompositionComponentError, match="current state"):
+        compositions.start_instance("owner", "root")
+    with pytest.raises(CompositionComponentError, match="already stopped"):
+        compositions.stop_instance("owner", "root")
+
+
+def test_start_failure_runs_reverse_cleanup_and_removes_graph(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    log = tmp_path / "events"
+    write_lifecycle_graph(
+        module,
+        log,
+        root_start="record('root.start'); raise RuntimeError('root boom')",
+    )
+    compositions = runtime_component()
+    lifecycle_instance(compositions, module, tmp_path)
+
+    with pytest.raises(CompositionLifecycleError, match="root boom") as captured:
+        compositions.start_instance("owner", "root")
+
+    assert len(captured.value.errors) == 1
+    assert log.read_text().splitlines() == ["child.start", "root.start", "child.stop"]
+    assert compositions.instances() == ()
+
+
+def test_start_failure_exposes_cleanup_failures(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    log = tmp_path / "events"
+    write_lifecycle_graph(
+        module,
+        log,
+        root_start="raise RuntimeError('start boom')",
+        child_stop="raise RuntimeError('cleanup boom')",
+    )
+    compositions = runtime_component()
+    lifecycle_instance(compositions, module, tmp_path)
+
+    with pytest.raises(CompositionLifecycleError) as captured:
+        compositions.start_instance("owner", "root")
+
+    assert [str(item) for item in captured.value.errors] == ["start boom", "cleanup boom"]
+    assert compositions.instances() == ()
+
+
+def test_stop_aggregates_failures_and_prevents_destroy(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    log = tmp_path / "events"
+    write_lifecycle_graph(
+        module,
+        log,
+        root_stop="raise RuntimeError('root stop boom')",
+        child_stop="raise RuntimeError('child stop boom')",
+    )
+    compositions = runtime_component()
+    lifecycle_instance(compositions, module, tmp_path)
+    compositions.start_instance("owner", "root")
+
+    with pytest.raises(CompositionLifecycleError) as captured:
+        compositions.destroy_instance("owner", "root")
+
+    assert [str(item) for item in captured.value.errors] == [
+        "root stop boom",
+        "child stop boom",
+    ]
+    assert len(compositions.instances()) == 2
+
+
+def test_destroy_active_graph_stops_it_and_unload_tears_down_owned_graph(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "module"
+    log = tmp_path / "events"
+    write_lifecycle_graph(module, log)
+    compositions = runtime_component()
+    lifecycle_instance(compositions, module, tmp_path)
+    compositions.start_instance("owner", "root")
+
+    compositions.unload_module("test/lifecycle")
+
+    assert compositions.instances() == ()
+    assert compositions.modules() == ()
+    assert log.read_text().splitlines()[-2:] == ["root.stop", "child.stop"]
+
+
+def test_missing_lifecycle_hooks_are_valid_noops(tmp_path: Path) -> None:
+    module = tmp_path / "module"
+    write_composition(
+        module,
+        "plain",
+        '[composition]\nid = "plain"\n',
+        "class Runtime:\n    def __init__(self, *, context, config): pass\n",
+    )
+    compositions = runtime_component()
+    compositions.load_module(module, module_id="test/plain")
+    root = compositions.create_instance(
+        CompositionInstanceSpec("plain", "test/plain/plain", {}, tmp_path),
+        owner_scope_id="owner",
+    )
+
+    compositions.start_instance("owner", "plain")
+    assert root.state == "active"
+    compositions.stop_instance("owner", "plain")
+    assert root.state == "stopped"

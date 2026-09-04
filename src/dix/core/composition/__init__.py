@@ -17,7 +17,11 @@ from .models import (
     ModuleInspection,
 )
 from .runtime import CompositionApi, CompositionRuntimeError
-from .component import CompositionComponent, CompositionComponentError
+from .component import (
+    CompositionComponent,
+    CompositionComponentError,
+    CompositionLifecycleError,
+)
 from .spec import (
     CompositionSpecError,
     discover_modules,
@@ -32,6 +36,7 @@ __all__ = [
     "CompositionApi",
     "CompositionComponent",
     "CompositionComponentError",
+    "CompositionLifecycleError",
     "CompositionDefinition",
     "CompositionDescriptor",
     "CompositionDependencyEdge",
