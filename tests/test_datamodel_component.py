@@ -80,6 +80,7 @@ def definition() -> ModelDefinition:
         schema={
             "username": ElementSpec(type="string"),
             "age": ElementSpec(type="integer"),
+            "active": ElementSpec(type="boolean"),
             "metadata": ElementSpec(type="any"),
         },
     )
@@ -91,13 +92,19 @@ def test_exact_mapping_instantiates_through_core_elements() -> None:
 
     result = datamodel.instantiate(
         model,
-        {"username": "alice", "age": 42, "metadata": {"source": "manual"}},
+        {
+            "username": "alice",
+            "age": 42,
+            "active": True,
+            "metadata": {"source": "manual"},
+        },
     )
 
     assert result.compatible is True
     assert dict(result.values) == {
         "username": "alice",
         "age": 42,
+        "active": True,
         "metadata": {"source": "manual"},
     }
     assert result.missing_fields == ()
@@ -111,7 +118,7 @@ def test_model_result_separates_missing_additional_and_element_issues() -> None:
 
     result = datamodel.instantiate(
         model,
-        {"age": "not-an-int", "metadata": None, "extra": True},
+        {"age": "not-an-int", "active": "true", "metadata": None, "extra": True},
     )
 
     assert result.compatible is False
@@ -121,6 +128,7 @@ def test_model_result_separates_missing_additional_and_element_issues() -> None:
         ("username", "missing_field"),
         ("extra", "additional_field"),
         ("age", "incompatible_type"),
+        ("active", "incompatible_type"),
     ]
     assert dict(result.values) == {"metadata": None}
 
@@ -152,11 +160,11 @@ def test_model_local_wrapper_does_not_change_another_registration() -> None:
 
     wrapped_result = datamodel.instantiate(
         wrapped,
-        {"username": "alice", "age": "42", "metadata": {}},
+        {"username": "alice", "age": "42", "active": False, "metadata": {}},
     )
     base_result = datamodel.instantiate(
         base,
-        {"username": "alice", "age": "42", "metadata": {}},
+        {"username": "alice", "age": "42", "active": False, "metadata": {}},
     )
 
     assert wrapped_result.compatible is True
@@ -201,11 +209,11 @@ def test_registered_model_can_explicitly_inherit_an_existing_scope() -> None:
 
     assert datamodel.instantiate(
         second,
-        {"username": "alice", "age": "42", "metadata": {}},
+        {"username": "alice", "age": "42", "active": True, "metadata": {}},
     ).compatible
     assert datamodel.instantiate(
         first,
-        {"username": "alice", "age": "42", "metadata": {}},
+        {"username": "alice", "age": "42", "active": True, "metadata": {}},
     ).compatible
 
 

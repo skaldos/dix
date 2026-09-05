@@ -81,8 +81,23 @@ def test_core_element_types_are_strict_and_inspectable() -> None:
     assert component.bind(ElementSpec(type="integer")).decode(42).value == 42
     assert component.bind(ElementSpec(type="integer")).decode(True).compatible is False
     assert component.bind(ElementSpec(type="integer")).decode("42").compatible is False
-    assert {item.type_name for item in component.list_types()} == {"any", "string", "integer"}
+    assert component.bind(ElementSpec(type="boolean")).decode(True).value is True
+    assert component.bind(ElementSpec(type="boolean")).decode(False).value is False
+    for incompatible in (0, 1, "true", "false", None, []):
+        result = component.bind(ElementSpec(type="boolean")).decode(incompatible)
+        assert result.compatible is False
+        assert result.issues[0].code == "incompatible_type"
+    assert {item.type_name for item in component.list_types()} == {
+        "any",
+        "boolean",
+        "integer",
+        "string",
+    }
     assert component.describe_type("integer").handler_id == "core.integer"
+    assert component.describe_type("boolean").handler_id == "core.boolean"
+
+    with pytest.raises(ElementBindingError, match="does not accept configuration"):
+        component.bind(ElementSpec(type="boolean", config={"parse": True}))
 
 
 def test_extension_can_define_a_new_type_but_not_override_core() -> None:

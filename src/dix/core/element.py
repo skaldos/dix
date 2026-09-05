@@ -226,6 +226,14 @@ class ElementComponent:
                         reject_bool=True,
                     ),
                 ),
+                _binding(
+                    "boolean",
+                    _StrictTypeHandler(
+                        handler_id="core.boolean",
+                        expected_type=bool,
+                        expected_name="boolean",
+                    ),
+                ),
             )
         )
 
