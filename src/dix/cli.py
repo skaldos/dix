@@ -144,6 +144,15 @@ def _composition_runtime():
     return assemble_compositions(effective.composition).compositions
 
 
+def _application_runtime():
+    from .assembly import assemble_compositions
+    from .core import ApplicationComponent
+
+    effective = load_effective_config()
+    assembly = assemble_compositions(effective.composition)
+    return assembly.components.require("application", ApplicationComponent)
+
+
 def _module_runtime():
     from .assembly import assemble_compositions
 
@@ -162,7 +171,7 @@ def _module_payload(descriptor) -> dict[str, Any]:
     }
 
 
-def _definition_payload(definition) -> dict[str, Any]:
+def _composition_definition_payload(definition) -> dict[str, Any]:
     return {
         "id": definition.id,
         "local_id": definition.local_id,
@@ -190,6 +199,41 @@ def _definition_payload(definition) -> dict[str, Any]:
     }
 
 
+def _application_definition_payload(definition) -> dict[str, Any]:
+    return {
+        "id": definition.id,
+        "local_id": definition.local_id,
+        "module_id": definition.module_id,
+        "module_root": str(definition.module_root),
+        "application_root": str(definition.application_root),
+        "spec_path": str(definition.spec_path),
+        "runtime_path": str(definition.runtime_path),
+        "compositions": {
+            alias: {
+                "use": dependency.use,
+                "config": dict(dependency.config),
+                "export": list(dependency.export),
+            }
+            for alias, dependency in definition.compositions.items()
+        },
+        "applications": {
+            alias: {
+                "use": dependency.use,
+                "config": dict(dependency.config),
+                "export": list(dependency.export),
+            }
+            for alias, dependency in definition.applications.items()
+        },
+        "functions": {
+            name: {
+                "description": function.description,
+                "export": function.export,
+            }
+            for name, function in definition.functions.items()
+        },
+    }
+
+
 def _annotation_text(value: Any) -> str:
     import inspect
 
@@ -199,9 +243,8 @@ def _annotation_text(value: Any) -> str:
 
 
 def _function_payload(descriptor) -> dict[str, Any]:
-    return {
+    payload = {
         "id": descriptor.id,
-        "composition_id": descriptor.composition_id,
         "source": descriptor.source,
         "origin": descriptor.origin,
         "signature": str(descriptor.signature),
@@ -209,6 +252,11 @@ def _function_payload(descriptor) -> dict[str, Any]:
         "docstring": descriptor.docstring,
         "is_async": descriptor.is_async,
     }
+    if hasattr(descriptor, "composition_id"):
+        payload["composition_id"] = descriptor.composition_id
+    else:
+        payload["application_id"] = descriptor.application_id
+    return payload
 
 
 def _emit_rows(rows: list[dict[str, Any]], *, json_output: bool, empty: str) -> None:
@@ -246,17 +294,10 @@ def cmd_module(args: argparse.Namespace) -> int:
             "root": str(inspection.root),
             "artifact_digest": inspection.artifact_digest,
             "composition_definitions": [
-                _definition_payload(item) for item in inspection.composition_definitions
+                _composition_definition_payload(item) for item in inspection.composition_definitions
             ],
             "application_definitions": [
-                {
-                    "id": item.id,
-                    "local_id": item.local_id,
-                    "module_id": item.module_id,
-                    "spec_path": str(item.spec_path),
-                    "runtime_path": str(item.runtime_path),
-                }
-                for item in inspection.application_definitions
+                _application_definition_payload(item) for item in inspection.application_definitions
             ],
         }
         if args.json:
@@ -339,6 +380,10 @@ def cmd_module(args: argparse.Namespace) -> int:
                 print(f"  {graph['root']}")
                 for edge in graph["edges"]:
                     print(f"    {edge['kind']} {edge['alias']} -> {edge['target']}")
+            for graph in payload["application_graphs"]:
+                print(f"  {graph['root']}")
+                for edge in graph["edges"]:
+                    print(f"    {edge['kind']} {edge['alias']} -> {edge['target']}")
         return 0
     raise SystemExit(f"unknown module command: {args.module_cmd}")
 
@@ -402,7 +447,7 @@ def cmd_composition(args: argparse.Namespace) -> int:
     if args.composition_cmd == "show":
         descriptor = runtime.describe_composition(args.id)
         payload = {
-            "definition": _definition_payload(descriptor.definition),
+            "definition": _composition_definition_payload(descriptor.definition),
             "module": _module_payload(descriptor.module),
             "functions": [_function_payload(item) for item in descriptor.functions],
         }
@@ -433,6 +478,105 @@ def cmd_composition(args: argparse.Namespace) -> int:
         _emit_rows(rows, json_output=args.json, empty="no composition instances")
         return 0
     raise SystemExit(f"unknown composition command: {args.composition_cmd}")
+
+
+def cmd_application(args: argparse.Namespace) -> int:
+    from .applications.scaffold import create_application_scaffold
+
+    if args.application_cmd == "new":
+        exports = list(args.export)
+        if args.export_all:
+            assembly = _module_runtime()
+            from .core import ApplicationComponent
+
+            applications = assembly.components.require("application", ApplicationComponent)
+            dependencies = _dependency_assignments(tuple(args.composition), tuple(args.app))
+            for alias in args.export_all:
+                try:
+                    kind, target = dependencies[alias]
+                except KeyError as exc:
+                    raise ValueError(f"export-all uses unknown dependency alias: {alias}") from exc
+                descriptors = (
+                    assembly.compositions.describe_composition(target).functions
+                    if kind == "composition"
+                    else applications.describe_application(target).functions
+                )
+                exports.extend(f"{alias}.{item.id}" for item in descriptors)
+        path = create_application_scaffold(
+            Path(args.module),
+            args.id,
+            compositions=tuple(args.composition),
+            applications=tuple(args.app),
+            exports=tuple(exports),
+            functions=tuple(args.function),
+        )
+        print(f"created: {path}")
+        return 0
+
+    runtime = _application_runtime()
+    if args.application_cmd == "list":
+        rows = [
+            {"id": item.id, "module_id": item.module_id, "local_id": item.local_id}
+            for item in runtime.definitions()
+        ]
+        _emit_rows(rows, json_output=args.json, empty="no loaded applications")
+        return 0
+    descriptor = runtime.describe_application(args.id)
+    if args.application_cmd == "show":
+        payload = {
+            "definition": _application_definition_payload(descriptor.definition),
+            "module": _module_payload(descriptor.module),
+            "functions": [_function_payload(item) for item in descriptor.functions],
+        }
+        if args.json:
+            _json_print(payload)
+        else:
+            print(f"application: {descriptor.definition.id}")
+            print(f"module: {descriptor.module.id}")
+            print(f"source: {descriptor.definition.spec_path}")
+        return 0
+    if args.application_cmd == "functions":
+        rows = [_function_payload(item) for item in descriptor.functions]
+        _emit_rows(rows, json_output=args.json, empty="no declared functions")
+        return 0
+    if args.application_cmd == "graph":
+        graph = runtime.describe_dependency_graph(args.id)
+        payload = {
+            "root": graph.root,
+            "nodes": list(graph.nodes),
+            "edges": [
+                {
+                    "source": edge.source,
+                    "alias": edge.alias,
+                    "target": edge.target,
+                    "kind": edge.kind,
+                }
+                for edge in graph.edges
+            ],
+        }
+        if args.json:
+            _json_print(payload)
+        else:
+            print(f"application: {graph.root}")
+            for edge in payload["edges"]:
+                print(f"  {edge['kind']} {edge['alias']} -> {edge['target']}")
+        return 0
+    raise SystemExit(f"unknown app command: {args.application_cmd}")
+
+
+def _dependency_assignments(
+    compositions: tuple[str, ...], applications: tuple[str, ...]
+) -> dict[str, tuple[str, str]]:
+    result: dict[str, tuple[str, str]] = {}
+    for kind, values in (("composition", compositions), ("app", applications)):
+        for raw in values:
+            alias, separator, target = raw.partition("=")
+            if not separator or not alias or not target:
+                raise ValueError(f"{kind} must use <alias>=<effective-id>: {raw}")
+            if alias in result:
+                raise ValueError(f"duplicate dependency alias: {alias}")
+            result[alias] = (kind, target)
+    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -514,6 +658,29 @@ def build_parser() -> argparse.ArgumentParser:
     composition_generate.add_argument("--lifecycle", action="store_true")
     composition.set_defaults(func=cmd_composition)
 
+    application = sub.add_parser("app")
+    application_sub = application.add_subparsers(dest="application_cmd", required=True)
+    application_list = application_sub.add_parser("list")
+    application_list.add_argument("--json", action="store_true")
+    application_show = application_sub.add_parser("show")
+    application_show.add_argument("id")
+    application_show.add_argument("--json", action="store_true")
+    application_functions = application_sub.add_parser("functions")
+    application_functions.add_argument("id")
+    application_functions.add_argument("--json", action="store_true")
+    application_graph = application_sub.add_parser("graph")
+    application_graph.add_argument("id")
+    application_graph.add_argument("--json", action="store_true")
+    application_new = application_sub.add_parser("new")
+    application_new.add_argument("--module", required=True)
+    application_new.add_argument("--id", required=True)
+    application_new.add_argument("--composition", action="append", default=[])
+    application_new.add_argument("--app", action="append", default=[])
+    application_new.add_argument("--export", action="append", default=[])
+    application_new.add_argument("--export-all", action="append", default=[])
+    application_new.add_argument("--function", action="append", default=[])
+    application.set_defaults(func=cmd_application)
+
     serve = sub.add_parser("serve")
     serve.set_defaults(func=cmd_serve)
 
@@ -532,6 +699,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 2
     except Exception as e:
+        from .applications.scaffold import ApplicationScaffoldError
         from .assembly import CompositionAssemblyError
         from .compositions.errors import CompositionGeneratorError
         from .compositions.scaffold import CompositionScaffoldError
@@ -553,6 +721,7 @@ def main(argv: list[str] | None = None) -> int:
                 CompositionScaffoldError,
                 CompositionGeneratorError,
                 CompositionSpecError,
+                ApplicationScaffoldError,
                 ApplicationComponentError,
                 ApplicationRuntimeError,
                 ModuleComponentError,

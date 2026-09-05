@@ -36,6 +36,7 @@ def create_module_scaffold(root: Path, module_id: str) -> Path:
                 f"module scaffold target escapes root '{scaffold_root}': {target}"
             ) from exc
     (target / "compositions").mkdir(parents=True)
+    (target / "apps").mkdir()
     return target
 
 
