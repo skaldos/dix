@@ -1,0 +1,26 @@
+[cli]
+name = "dix-cli-demo"
+description = "Declarative CLI application pressure test."
+no_args = "help"
+
+[groups.text]
+description = "Text operations."
+
+[commands.render]
+path = ["text", "render"]
+target = "tool.render"
+model = "models/render_input.toml"
+description = "Render one value repeatedly."
+
+[commands.render.options.value]
+description = "Text value to render."
+env = ["DIX_CLI_DEMO_VALUE"]
+
+[commands.render.options.count]
+names = ["--count", "-c"]
+description = "Number of rendered lines."
+env = ["DIX_CLI_DEMO_COUNT"]
+
+[commands.render.options.upper]
+description = "Render the value in uppercase."
+env = ["DIX_CLI_DEMO_UPPER"]

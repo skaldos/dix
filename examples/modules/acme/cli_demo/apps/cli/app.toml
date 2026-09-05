@@ -1,0 +1,14 @@
+[app]
+id = "cli"
+
+[compositions.cli]
+use = "dix/core/cli/typer_cli"
+
+[apps.tool]
+use = "acme/cli_demo/tool"
+
+[functions.describe]
+description = "Describe the normalized demo CLI contract."
+
+[functions.run]
+description = "Run the demo CLI with explicit arguments."

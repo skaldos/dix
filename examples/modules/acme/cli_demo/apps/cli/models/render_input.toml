@@ -1,0 +1,12 @@
+[model]
+name = "render_input"
+version = "1"
+
+[fields.value]
+type = "string"
+
+[fields.count]
+type = "integer"
+
+[fields.upper]
+type = "boolean"
