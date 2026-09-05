@@ -334,6 +334,25 @@ class CompositionComponent:
             del self._instances[(scope_id, graph_instance_id)]
         del self._root_graphs[key]
 
+    def _discard_instance_graph(self, scope_id: str, instance_id: str) -> None:
+        """Remove one graph without invoking lifecycle hooks during parent rollback."""
+        graph = self._require_root_graph(scope_id, instance_id)
+        for graph_instance_id in reversed(graph):
+            del self._instances[(scope_id, graph_instance_id)]
+        del self._root_graphs[(scope_id, instance_id)]
+
+    def _instance_graph_has_state(
+        self,
+        scope_id: str,
+        instance_id: str,
+        state: str,
+    ) -> bool:
+        graph = self._require_root_graph(scope_id, instance_id)
+        return any(
+            self._instances[(scope_id, graph_instance_id)].state == state
+            for graph_instance_id in graph
+        )
+
     def initialize_instance(self, scope_id: str, instance_id: str) -> CompositionInstance:
         graph = self._require_root_graph(scope_id, instance_id)
         instances = [self._instances[(scope_id, item)] for item in graph]

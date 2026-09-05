@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import uuid4
 
-from dix.core.composition import CompositionApi, CompositionComponent, CompositionInstanceSpec
+from dix.core.composition import (
+    CompositionApi,
+    CompositionComponent,
+    CompositionInstanceSpec,
+    CompositionLifecycleError,
+)
 from dix.core.composition.models import CompositionInstance, LoadedCompositionDefinition
 from dix.core.module.models import ModuleDescriptor
 
@@ -34,6 +39,15 @@ from .spec import inspect_spec
 
 class ApplicationComponentError(Exception):
     """Raised when application definitions cannot be loaded or inspected safely."""
+
+
+class ApplicationLifecycleError(ApplicationComponentError):
+    """Report a lifecycle failure together with every rollback or teardown failure."""
+
+    def __init__(self, message: str, errors: tuple[BaseException, ...]) -> None:
+        self.errors = errors
+        details = "; ".join(f"{type(item).__name__}: {item}" for item in errors)
+        super().__init__(f"{message}: {details}")
 
 
 class ApplicationComponent:
@@ -263,18 +277,199 @@ class ApplicationComponent:
 
     def destroy_instance(self, scope_id: str, instance_id: str) -> None:
         graph = self._require_root_graph(scope_id, instance_id)
-        if any(self._instances[(scope_id, item)].state != "created" for item in graph):
+        if self._graph_has_active_lifecycle(scope_id, graph):
+            self.stop_instance(scope_id, instance_id)
+        self._destroy_composition_graphs(scope_id, graph)
+        self._discard_instance_graph(scope_id, instance_id)
+
+    def start_instance(self, scope_id: str, instance_id: str) -> ApplicationInstance:
+        graph = self._require_root_graph(scope_id, instance_id)
+        instances = [self._instances[(scope_id, item)] for item in graph]
+        if any(item.state != "created" for item in instances):
             raise ApplicationComponentError(
-                f"only inactive application graphs can be destroyed: {scope_id}/{instance_id}"
+                f"application instance graph cannot be started from its current state: "
+                f"{scope_id}/{instance_id}"
             )
+
+        initialized: list[tuple[str, str]] = []
+        try:
+            for instance in instances:
+                composition_owner = f"application:{scope_id}:{instance.id}"
+                for composition_id in sorted(instance.compositions):
+                    self._compositions.initialize_instance(
+                        composition_owner,
+                        composition_id,
+                    )
+                    initialized.append((composition_owner, composition_id))
+        except Exception as init_error:
+            rollback_errors = self._cleanup_compositions(initialized)
+            self._discard_all_composition_graphs(scope_id, graph)
+            self._discard_instance_graph(scope_id, instance_id)
+            raise ApplicationLifecycleError(
+                f"application composition init failed for {scope_id}/{instance_id}",
+                (*self._flatten_lifecycle_error(init_error), *rollback_errors),
+            ) from init_error
+
+        started: list[ApplicationInstance] = []
+        try:
+            for instance in instances:
+                self._call_lifecycle(instance, "start")
+                instance.state = "active"
+                started.append(instance)
+        except Exception as start_error:
+            rollback_errors: list[BaseException] = []
+            for started_instance in reversed(started):
+                try:
+                    self._call_lifecycle(started_instance, "stop")
+                    started_instance.state = "stopped"
+                except Exception as stop_error:
+                    rollback_errors.append(stop_error)
+            rollback_errors.extend(self._cleanup_compositions(initialized))
+            self._discard_all_composition_graphs(scope_id, graph)
+            self._discard_instance_graph(scope_id, instance_id)
+            raise ApplicationLifecycleError(
+                f"application start failed for {scope_id}/{instance_id}",
+                (start_error, *rollback_errors),
+            ) from start_error
+        return self.require_instance(scope_id, instance_id)
+
+    def stop_instance(self, scope_id: str, instance_id: str) -> ApplicationInstance:
+        graph = self._require_root_graph(scope_id, instance_id)
+        instances = [self._instances[(scope_id, item)] for item in graph]
+        has_active_apps = any(item.state == "active" for item in instances)
+        initialized = self._initialized_composition_graphs(scope_id, graph)
+        if not has_active_apps and not initialized:
+            if any(item.state == "created" for item in instances):
+                raise ApplicationComponentError(
+                    f"application instance graph has not been started: {scope_id}/{instance_id}"
+                )
+            raise ApplicationComponentError(
+                f"application instance graph is already stopped: {scope_id}/{instance_id}"
+            )
+
+        errors: list[BaseException] = []
+        for instance in reversed(instances):
+            if instance.state != "active":
+                continue
+            try:
+                self._call_lifecycle(instance, "stop")
+                instance.state = "stopped"
+            except Exception as stop_error:
+                errors.append(stop_error)
+        errors.extend(self._cleanup_compositions(initialized))
+        if errors:
+            raise ApplicationLifecycleError(
+                f"application stop failed for {scope_id}/{instance_id}",
+                tuple(errors),
+            )
+        return self.require_instance(scope_id, instance_id)
+
+    @staticmethod
+    def _call_lifecycle(instance: ApplicationInstance, method_name: str) -> None:
+        method = getattr(instance.runtime, method_name, None)
+        if method is None:
+            return
+        if not callable(method):
+            raise ApplicationComponentError(
+                f"lifecycle attribute is not callable: {instance.definition_id}.{method_name}"
+            )
+        result = method()
+        if inspect.isawaitable(result):
+            raise ApplicationComponentError(
+                f"async lifecycle hooks are not supported: {instance.definition_id}.{method_name}"
+            )
+
+    def _initialized_composition_graphs(
+        self,
+        scope_id: str,
+        graph: tuple[str, ...],
+    ) -> list[tuple[str, str]]:
+        initialized: list[tuple[str, str]] = []
+        for graph_instance_id in graph:
+            instance = self._instances[(scope_id, graph_instance_id)]
+            composition_owner = f"application:{scope_id}:{graph_instance_id}"
+            for composition_id in sorted(instance.compositions):
+                try:
+                    is_initialized = self._compositions._instance_graph_has_state(
+                        composition_owner,
+                        composition_id,
+                        "initialized",
+                    )
+                except Exception:
+                    continue
+                if is_initialized:
+                    initialized.append((composition_owner, composition_id))
+        return initialized
+
+    def _cleanup_compositions(
+        self,
+        initialized: list[tuple[str, str]],
+    ) -> list[BaseException]:
+        errors: list[BaseException] = []
+        for composition_owner, composition_id in reversed(initialized):
+            try:
+                self._compositions.cleanup_instance(
+                    composition_owner,
+                    composition_id,
+                )
+            except Exception as cleanup_error:
+                errors.extend(self._flatten_lifecycle_error(cleanup_error))
+        return errors
+
+    def _destroy_composition_graphs(
+        self,
+        scope_id: str,
+        graph: tuple[str, ...],
+    ) -> None:
         for graph_instance_id in reversed(graph):
             instance = self._instances[(scope_id, graph_instance_id)]
             composition_owner = f"application:{scope_id}:{graph_instance_id}"
             for composition_id in reversed(tuple(instance.compositions)):
                 self._compositions.destroy_instance(composition_owner, composition_id)
+
+    def _discard_all_composition_graphs(
+        self,
+        scope_id: str,
+        graph: tuple[str, ...],
+    ) -> None:
+        for graph_instance_id in reversed(graph):
+            instance = self._instances.get((scope_id, graph_instance_id))
+            if instance is None:
+                continue
+            composition_owner = f"application:{scope_id}:{graph_instance_id}"
+            for composition_id in reversed(tuple(instance.compositions)):
+                try:
+                    self._compositions.require_instance(
+                        composition_owner,
+                        composition_id,
+                    )
+                except Exception:
+                    continue
+                self._compositions._discard_instance_graph(
+                    composition_owner,
+                    composition_id,
+                )
+
+    def _discard_instance_graph(self, scope_id: str, instance_id: str) -> None:
+        graph = self._require_root_graph(scope_id, instance_id)
         for graph_instance_id in reversed(graph):
             del self._instances[(scope_id, graph_instance_id)]
         del self._root_graphs[(scope_id, instance_id)]
+
+    def _graph_has_active_lifecycle(
+        self,
+        scope_id: str,
+        graph: tuple[str, ...],
+    ) -> bool:
+        if any(self._instances[(scope_id, item)].state == "active" for item in graph):
+            return True
+        return bool(self._initialized_composition_graphs(scope_id, graph))
+
+    @staticmethod
+    def _flatten_lifecycle_error(error: BaseException) -> tuple[BaseException, ...]:
+        if isinstance(error, CompositionLifecycleError):
+            return error.errors
+        return (error,)
 
     def instances(self, *, scope_id: str | None = None) -> tuple[ApplicationInstance, ...]:
         values = (
