@@ -142,6 +142,7 @@ class ModuleComponent:
             application_ids,
         )
 
+        self._applications._destroy_module_roots(module_id)
         self._compositions._destroy_module_roots(module_id, composition_ids)
         self._applications._unpublish_definitions(tuple(application_ids))
         self._compositions._unpublish_definitions(tuple(composition_ids))

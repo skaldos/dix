@@ -9,10 +9,13 @@ from .models import (
     ApplicationDescriptor,
     ApplicationFunctionDescriptor,
     ApplicationFunctionSpec,
+    ApplicationInstance,
+    ApplicationInstanceSpec,
+    ApplicationRuntimeContext,
     ApplicationSource,
     LoadedApplicationDefinition,
 )
-from .runtime import ApplicationRuntimeError
+from .runtime import ApplicationApi, ApplicationRuntimeError
 from .spec import (
     ApplicationSpecError,
     inspect_application_source,
@@ -22,6 +25,7 @@ from .spec import (
 )
 
 __all__ = [
+    "ApplicationApi",
     "ApplicationComponent",
     "ApplicationComponentError",
     "ApplicationDefinition",
@@ -31,6 +35,9 @@ __all__ = [
     "ApplicationDescriptor",
     "ApplicationFunctionDescriptor",
     "ApplicationFunctionSpec",
+    "ApplicationInstance",
+    "ApplicationInstanceSpec",
+    "ApplicationRuntimeContext",
     "ApplicationRuntimeError",
     "ApplicationSource",
     "ApplicationSpecError",

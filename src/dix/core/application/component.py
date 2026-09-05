@@ -4,10 +4,11 @@ import importlib.util
 import inspect
 import sys
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from uuid import uuid4
 
-from dix.core.composition import CompositionComponent
-from dix.core.composition.models import LoadedCompositionDefinition
+from dix.core.composition import CompositionApi, CompositionComponent, CompositionInstanceSpec
+from dix.core.composition.models import CompositionInstance, LoadedCompositionDefinition
 from dix.core.module.models import ModuleDescriptor
 
 from .models import (
@@ -16,10 +17,15 @@ from .models import (
     ApplicationDependencyGraph,
     ApplicationDescriptor,
     ApplicationFunctionDescriptor,
+    ApplicationInstance,
+    ApplicationInstanceSpec,
+    ApplicationRuntimeContext,
     LoadedApplicationDefinition,
 )
 from .runtime import (
+    ApplicationApi,
     ApplicationRuntimeError,
+    create_api,
     describe_runtime_functions,
     validate_runtime_constructor,
 )
@@ -39,6 +45,8 @@ class ApplicationComponent:
         self._compositions = compositions
         self._import_namespace = uuid4().hex
         self._definitions: dict[str, LoadedApplicationDefinition] = {}
+        self._instances: dict[tuple[str, str], ApplicationInstance] = {}
+        self._root_graphs: dict[tuple[str, str], tuple[str, ...]] = {}
 
     def inspect_spec(self, path, *, module_id: str) -> ApplicationDefinition:
         return inspect_spec(path, module_id=module_id)
@@ -124,6 +132,178 @@ class ApplicationComponent:
             f"application function is not declared: {application_id}.{function_id}"
         )
 
+    def create_instance(
+        self,
+        spec: ApplicationInstanceSpec,
+        *,
+        owner_scope_id: str,
+    ) -> ApplicationInstance:
+        owner_scope = owner_scope_id.strip()
+        if not owner_scope:
+            raise ApplicationComponentError("owner scope id must not be empty")
+        root_key = (owner_scope, spec.id)
+        if root_key in self._root_graphs or root_key in self._instances:
+            raise ApplicationComponentError(
+                f"application root instance already exists: {owner_scope}/{spec.id}"
+            )
+        self._validate_loaded_graph(spec.use, self._definitions, {})
+        staged: dict[str, ApplicationInstance] = {}
+        created_compositions: list[tuple[str, str]] = []
+
+        def build(
+            definition_id: str,
+            instance_id: str,
+            config: Mapping[str, object],
+            config_base_dir: Path,
+            parent_instance_id: str | None,
+        ) -> ApplicationInstance:
+            loaded = self._require_loaded_definition(definition_id)
+            definition = loaded.definition
+            composition_apis: dict[str, CompositionApi] = {}
+            composition_instances: dict[str, CompositionInstance] = {}
+            composition_owner = f"application:{owner_scope}:{instance_id}"
+            for alias, dependency in sorted(definition.compositions.items()):
+                composition = self._compositions.create_instance(
+                    CompositionInstanceSpec(
+                        alias,
+                        dependency.use,
+                        dependency.config,
+                        definition.application_root,
+                    ),
+                    owner_scope_id=composition_owner,
+                )
+                created_compositions.append((composition_owner, alias))
+                composition_instances[alias] = composition
+                composition_apis[alias] = composition.api
+
+            child_apis: dict[str, ApplicationApi] = {}
+            for alias, dependency in sorted(definition.applications.items()):
+                child_id = f"{instance_id}/{alias}"
+                child = build(
+                    dependency.use,
+                    child_id,
+                    dependency.config,
+                    definition.application_root,
+                    instance_id,
+                )
+                child_apis[alias] = child.api
+
+            aliases = (*sorted(definition.compositions), *sorted(definition.applications))
+            validate_runtime_constructor(loaded.runtime_type, aliases)
+            context = ApplicationRuntimeContext(
+                instance_id=instance_id,
+                application_id=definition.id,
+                module_id=definition.module_id,
+                module_root=definition.module_root,
+                application_root=definition.application_root,
+                config_base_dir=config_base_dir.expanduser().resolve(),
+                owner_scope_id=owner_scope,
+            )
+            injected = {**composition_apis, **child_apis}
+            try:
+                runtime = loaded.runtime_type(
+                    context=context,
+                    config=config,
+                    **injected,
+                )
+                api = create_api(
+                    definition,
+                    runtime,
+                    composition_apis,
+                    child_apis,
+                )
+            except ApplicationRuntimeError:
+                raise
+            except Exception as exc:
+                raise ApplicationRuntimeError(
+                    f"cannot create application runtime '{definition.id}': {exc}"
+                ) from exc
+            instance = ApplicationInstance(
+                id=instance_id,
+                definition_id=definition.id,
+                module_id=definition.module_id,
+                scope_id=owner_scope,
+                root_instance_id=spec.id,
+                parent_instance_id=parent_instance_id,
+                runtime=runtime,
+                api=api,
+                context=context,
+                compositions=composition_instances,
+            )
+            staged[instance_id] = instance
+            return instance
+
+        try:
+            root = build(
+                spec.use,
+                spec.id,
+                spec.config,
+                spec.config_base_dir,
+                None,
+            )
+        except Exception as exc:
+            rollback_errors: list[BaseException] = []
+            for scope_id, composition_id in reversed(created_compositions):
+                try:
+                    self._compositions.destroy_instance(scope_id, composition_id)
+                except Exception as rollback_error:
+                    rollback_errors.append(rollback_error)
+            suffix = ""
+            if rollback_errors:
+                details = "; ".join(str(item) for item in rollback_errors)
+                suffix = f"; rollback failures: {details}"
+            raise ApplicationComponentError(
+                f"cannot create application instance '{owner_scope}/{spec.id}': {exc}{suffix}"
+            ) from exc
+
+        for instance_id, instance in staged.items():
+            self._instances[(owner_scope, instance_id)] = instance
+        self._root_graphs[root_key] = tuple(staged)
+        return root
+
+    def destroy_instance(self, scope_id: str, instance_id: str) -> None:
+        graph = self._require_root_graph(scope_id, instance_id)
+        if any(self._instances[(scope_id, item)].state != "created" for item in graph):
+            raise ApplicationComponentError(
+                f"only inactive application graphs can be destroyed: {scope_id}/{instance_id}"
+            )
+        for graph_instance_id in reversed(graph):
+            instance = self._instances[(scope_id, graph_instance_id)]
+            composition_owner = f"application:{scope_id}:{graph_instance_id}"
+            for composition_id in reversed(tuple(instance.compositions)):
+                self._compositions.destroy_instance(composition_owner, composition_id)
+        for graph_instance_id in reversed(graph):
+            del self._instances[(scope_id, graph_instance_id)]
+        del self._root_graphs[(scope_id, instance_id)]
+
+    def instances(self, *, scope_id: str | None = None) -> tuple[ApplicationInstance, ...]:
+        values = (
+            instance
+            for (candidate_scope, _), instance in self._instances.items()
+            if scope_id is None or candidate_scope == scope_id
+        )
+        return tuple(sorted(values, key=lambda item: (item.scope_id, item.id)))
+
+    def require_instance(self, scope_id: str, instance_id: str) -> ApplicationInstance:
+        try:
+            return self._instances[(scope_id, instance_id)]
+        except KeyError as exc:
+            raise ApplicationComponentError(
+                f"application instance not found: {scope_id}/{instance_id}"
+            ) from exc
+
+    def _require_root_graph(self, scope_id: str, instance_id: str) -> tuple[str, ...]:
+        try:
+            return self._root_graphs[(scope_id, instance_id)]
+        except KeyError as exc:
+            if (scope_id, instance_id) in self._instances:
+                raise ApplicationComponentError(
+                    f"operations require a root application instance: {scope_id}/{instance_id}"
+                ) from exc
+            raise ApplicationComponentError(
+                f"application root instance not found: {scope_id}/{instance_id}"
+            ) from exc
+
     def _stage_definitions(
         self,
         definitions: Sequence[ApplicationDefinition],
@@ -194,6 +374,27 @@ class ApplicationComponent:
                     raise ApplicationComponentError(
                         f"module '{module_id}' is required by loaded application '{application_id}'"
                     )
+        for graph_key, instance_ids in self._root_graphs.items():
+            root = self._instances[(graph_key[0], graph_key[1])]
+            if root.module_id == module_id:
+                continue
+            if any(
+                self._instances[(graph_key[0], instance_id)].definition_id in owned_application_ids
+                for instance_id in instance_ids
+            ):
+                raise ApplicationComponentError(
+                    f"module '{module_id}' is used by externally rooted application graph "
+                    f"'{root.scope_id}/{root.id}'"
+                )
+
+    def _destroy_module_roots(self, module_id: str) -> None:
+        roots = [
+            (scope_id, root_id)
+            for scope_id, root_id in self._root_graphs
+            if self._instances[(scope_id, root_id)].module_id == module_id
+        ]
+        for scope_id, root_id in roots:
+            self.destroy_instance(scope_id, root_id)
 
     def _validate_loaded_graph(
         self,
