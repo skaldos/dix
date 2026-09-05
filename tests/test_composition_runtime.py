@@ -489,10 +489,10 @@ def write_lifecycle_graph(
     module: Path,
     log: Path,
     *,
-    child_start: str = "record('child.start')",
-    child_stop: str = "record('child.stop')",
-    root_start: str = "record('root.start')",
-    root_stop: str = "record('root.stop')",
+    child_init: str = "record('child.init')",
+    child_cleanup: str = "record('child.cleanup')",
+    root_init: str = "record('root.init')",
+    root_cleanup: str = "record('root.cleanup')",
 ) -> None:
     helper = (
         "from pathlib import Path\n"
@@ -508,10 +508,10 @@ def write_lifecycle_graph(
         helper
         + "class Runtime:\n"
         + "    def __init__(self, *, context, config): pass\n"
-        + "    def start(self):\n"
-        + f"        {child_start}\n"
-        + "    def stop(self):\n"
-        + f"        {child_stop}\n",
+        + "    def init(self):\n"
+        + f"        {child_init}\n"
+        + "    def cleanup(self):\n"
+        + f"        {child_cleanup}\n",
     )
     write_composition(
         module,
@@ -524,10 +524,10 @@ use = "test/lifecycle/child"
         helper
         + "class Runtime:\n"
         + "    def __init__(self, *, context, config, child): pass\n"
-        + "    def start(self):\n"
-        + f"        {root_start}\n"
-        + "    def stop(self):\n"
-        + f"        {root_stop}\n",
+        + "    def init(self):\n"
+        + f"        {root_init}\n"
+        + "    def cleanup(self):\n"
+        + f"        {root_cleanup}\n",
     )
 
 
@@ -543,93 +543,93 @@ def lifecycle_instance(
     )
 
 
-def test_lifecycle_starts_dependencies_first_and_stops_in_reverse(tmp_path: Path) -> None:
+def test_lifecycle_initializes_dependencies_first_and_cleans_in_reverse(tmp_path: Path) -> None:
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(module, log)
     compositions = runtime_component()
     root = lifecycle_instance(compositions, module, tmp_path)
 
-    compositions.start_instance("owner", "root")
-    assert root.state == "active"
-    assert log.read_text().splitlines() == ["child.start", "root.start"]
+    compositions.initialize_instance("owner", "root")
+    assert root.state == "initialized"
+    assert log.read_text().splitlines() == ["child.init", "root.init"]
 
-    compositions.stop_instance("owner", "root")
-    assert root.state == "stopped"
+    compositions.cleanup_instance("owner", "root")
+    assert root.state == "cleaned"
     assert log.read_text().splitlines() == [
-        "child.start",
-        "root.start",
-        "root.stop",
-        "child.stop",
+        "child.init",
+        "root.init",
+        "root.cleanup",
+        "child.cleanup",
     ]
     with pytest.raises(CompositionComponentError, match="current state"):
-        compositions.start_instance("owner", "root")
-    with pytest.raises(CompositionComponentError, match="already stopped"):
-        compositions.stop_instance("owner", "root")
+        compositions.initialize_instance("owner", "root")
+    with pytest.raises(CompositionComponentError, match="already cleaned"):
+        compositions.cleanup_instance("owner", "root")
 
 
-def test_start_failure_runs_reverse_cleanup_and_removes_graph(tmp_path: Path) -> None:
+def test_init_failure_runs_reverse_cleanup_and_removes_graph(tmp_path: Path) -> None:
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(
         module,
         log,
-        root_start="record('root.start'); raise RuntimeError('root boom')",
+        root_init="record('root.init'); raise RuntimeError('root boom')",
     )
     compositions = runtime_component()
     lifecycle_instance(compositions, module, tmp_path)
 
     with pytest.raises(CompositionLifecycleError, match="root boom") as captured:
-        compositions.start_instance("owner", "root")
+        compositions.initialize_instance("owner", "root")
 
     assert len(captured.value.errors) == 1
-    assert log.read_text().splitlines() == ["child.start", "root.start", "child.stop"]
+    assert log.read_text().splitlines() == ["child.init", "root.init", "child.cleanup"]
     assert compositions.instances() == ()
 
 
-def test_start_failure_exposes_cleanup_failures(tmp_path: Path) -> None:
+def test_init_failure_exposes_cleanup_failures(tmp_path: Path) -> None:
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(
         module,
         log,
-        root_start="raise RuntimeError('start boom')",
-        child_stop="raise RuntimeError('cleanup boom')",
+        root_init="raise RuntimeError('init boom')",
+        child_cleanup="raise RuntimeError('cleanup boom')",
     )
     compositions = runtime_component()
     lifecycle_instance(compositions, module, tmp_path)
 
     with pytest.raises(CompositionLifecycleError) as captured:
-        compositions.start_instance("owner", "root")
+        compositions.initialize_instance("owner", "root")
 
-    assert [str(item) for item in captured.value.errors] == ["start boom", "cleanup boom"]
+    assert [str(item) for item in captured.value.errors] == ["init boom", "cleanup boom"]
     assert compositions.instances() == ()
 
 
-def test_stop_aggregates_failures_and_prevents_destroy(tmp_path: Path) -> None:
+def test_cleanup_aggregates_failures_and_prevents_destroy(tmp_path: Path) -> None:
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(
         module,
         log,
-        root_stop="raise RuntimeError('root stop boom')",
-        child_stop="raise RuntimeError('child stop boom')",
+        root_cleanup="raise RuntimeError('root cleanup boom')",
+        child_cleanup="raise RuntimeError('child cleanup boom')",
     )
     compositions = runtime_component()
     lifecycle_instance(compositions, module, tmp_path)
-    compositions.start_instance("owner", "root")
+    compositions.initialize_instance("owner", "root")
 
     with pytest.raises(CompositionLifecycleError) as captured:
         compositions.destroy_instance("owner", "root")
 
     assert [str(item) for item in captured.value.errors] == [
-        "root stop boom",
-        "child stop boom",
+        "root cleanup boom",
+        "child cleanup boom",
     ]
     assert len(compositions.instances()) == 2
 
 
-def test_destroy_active_graph_stops_it_and_unload_tears_down_owned_graph(
+def test_destroy_initialized_graph_cleans_it_and_unload_tears_down_owned_graph(
     tmp_path: Path,
 ) -> None:
     module = tmp_path / "module"
@@ -637,13 +637,13 @@ def test_destroy_active_graph_stops_it_and_unload_tears_down_owned_graph(
     write_lifecycle_graph(module, log)
     compositions = runtime_component()
     lifecycle_instance(compositions, module, tmp_path)
-    compositions.start_instance("owner", "root")
+    compositions.initialize_instance("owner", "root")
 
     compositions.unload_module("test/lifecycle")
 
     assert compositions.instances() == ()
     assert compositions.modules() == ()
-    assert log.read_text().splitlines()[-2:] == ["root.stop", "child.stop"]
+    assert log.read_text().splitlines()[-2:] == ["root.cleanup", "child.cleanup"]
 
 
 def test_missing_lifecycle_hooks_are_valid_noops(tmp_path: Path) -> None:
@@ -661,7 +661,7 @@ def test_missing_lifecycle_hooks_are_valid_noops(tmp_path: Path) -> None:
         owner_scope_id="owner",
     )
 
-    compositions.start_instance("owner", "plain")
-    assert root.state == "active"
-    compositions.stop_instance("owner", "plain")
-    assert root.state == "stopped"
+    compositions.initialize_instance("owner", "plain")
+    assert root.state == "initialized"
+    compositions.cleanup_instance("owner", "plain")
+    assert root.state == "cleaned"

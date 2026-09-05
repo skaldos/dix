@@ -37,8 +37,8 @@ description = "Label."
     def __init__(self, *, context, config): pass
     def echo(self, value: str) -> str: return value
     def label(self) -> str: return "base"
-    def start(self): record("base.start")
-    def stop(self): record("base.stop")
+    def init(self): record("base.init")
+    def cleanup(self): record("base.cleanup")
 """,
     )
     write_composition(
@@ -65,8 +65,8 @@ description = "Local."
     def echo(self, value: str) -> str: return self.base.echo(value)
     def base_label(self) -> str: return self.base.label()
     def local(self) -> str: return "child"
-    def start(self): record("child.start")
-    def stop(self): record("child.stop")
+    def init(self): record("child.init")
+    def cleanup(self): record("child.cleanup")
 """,
     )
     registry = create_core_component_registry()
@@ -98,11 +98,11 @@ description = "Local."
         "pressure/bundle/child", "base_label"
     ).origin == "base.label"
 
-    compositions.start_instance("pressure", "first")
-    compositions.stop_instance("pressure", "first")
+    compositions.initialize_instance("pressure", "first")
+    compositions.cleanup_instance("pressure", "first")
     assert log.read_text().splitlines() == [
-        "base.start",
-        "child.start",
-        "child.stop",
-        "base.stop",
+        "base.init",
+        "child.init",
+        "child.cleanup",
+        "base.cleanup",
     ]

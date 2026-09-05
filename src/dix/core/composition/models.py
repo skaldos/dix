@@ -172,4 +172,4 @@ class CompositionInstance:
     runtime: object
     api: "CompositionApi"
     context: CompositionRuntimeContext
-    state: Literal["created", "active", "stopped"] = "created"
+    state: Literal["created", "initialized", "cleaned"] = "created"

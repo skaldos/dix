@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -44,16 +45,25 @@ def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAP
     else:
         cfg = {**DEFAULT_CONFIG, **config}
         composition_settings = composition_settings_from_values(cfg, base_dir=None)
-    app = FastAPI(title="dix")
     store = RuntimeStore()
     renderer = HtmlRenderer()
     composition_assembly = assemble_compositions(composition_settings)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            composition_assembly.shutdown()
+
+    app = FastAPI(title="dix", lifespan=lifespan)
     capability_components = composition_assembly.components
     functional_store = FunctionalRuntimeStore(
         compositions=composition_assembly.compositions,
     )
     app.state.capability_components = capability_components
     app.state.composition_component = composition_assembly.compositions
+    app.state.composition_assembly = composition_assembly
     app.state.functional_store = functional_store
 
     def session_from_request(request: Request) -> Session:

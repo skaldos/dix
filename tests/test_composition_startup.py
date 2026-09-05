@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from dix.assembly import CompositionAssemblyError, assemble_compositions
 from dix.config import load_effective_config
@@ -16,7 +17,7 @@ def write_composition(module: Path, local_id: str, body: str, runtime: str) -> N
     (root / "runtime.py").write_text(runtime)
 
 
-def test_configured_startup_loads_dependencies_and_starts_only_enabled_instances(
+def test_configured_startup_loads_dependencies_and_initializes_only_enabled_instances(
     tmp_path: Path,
 ) -> None:
     modules = tmp_path / "modules"
@@ -30,10 +31,10 @@ def test_configured_startup_loads_dependencies_and_starts_only_enabled_instances
             f"LOG = Path({str(log)!r})\n"
             "class Runtime:\n"
             "    def __init__(self, *, context, config): self.context = context\n"
-            "    def start(self):\n"
-            "        with LOG.open('a') as stream: stream.write('base.start\\n')\n"
-            "    def stop(self):\n"
-            "        with LOG.open('a') as stream: stream.write('base.stop\\n')\n"
+            "    def init(self):\n"
+            "        with LOG.open('a') as stream: stream.write('base.init\\n')\n"
+            "    def cleanup(self):\n"
+            "        with LOG.open('a') as stream: stream.write('base.cleanup\\n')\n"
         ),
     )
     write_composition(
@@ -49,10 +50,10 @@ use = "z-base/base"
             f"LOG = Path({str(log)!r})\n"
             "class Runtime:\n"
             "    def __init__(self, *, context, config, base): self.context = context\n"
-            "    def start(self):\n"
-            "        with LOG.open('a') as stream: stream.write('root.start\\n')\n"
-            "    def stop(self):\n"
-            "        with LOG.open('a') as stream: stream.write('root.stop\\n')\n"
+            "    def init(self):\n"
+            "        with LOG.open('a') as stream: stream.write('root.init\\n')\n"
+            "    def cleanup(self):\n"
+            "        with LOG.open('a') as stream: stream.write('root.cleanup\\n')\n"
         ),
     )
     config_dir = tmp_path / "config"
@@ -81,13 +82,25 @@ startup = false
         "enabled",
         "enabled/base",
     ]
-    assert log.read_text().splitlines() == ["base.start", "root.start"]
+    assert log.read_text().splitlines() == ["base.init", "root.init"]
     root = compositions.require_instance("startup", "enabled")
     child = compositions.require_instance("startup", "enabled/base")
     assert root.context.config_base_dir == config_dir.resolve()
     assert child.context.config_base_dir == (
         modules / "a-root" / "compositions" / "root"
     ).resolve()
+
+    with TestClient(app):
+        pass
+
+    assert compositions.instances() == ()
+    assert log.read_text().splitlines() == [
+        "base.init",
+        "root.init",
+        "root.cleanup",
+        "base.cleanup",
+    ]
+    app.state.composition_assembly.shutdown()
 
 
 def test_invalid_trusted_graph_fails_before_any_candidate_import(tmp_path: Path) -> None:

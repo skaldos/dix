@@ -17,6 +17,27 @@ class CompositionAssembly:
     components: ComponentRegistry
     compositions: CompositionComponent
 
+    def shutdown(self) -> None:
+        """Destroy every root graph owned by this assembly."""
+        roots = [
+            instance
+            for instance in self.compositions.instances()
+            if instance.parent_instance_id is None
+        ]
+        errors: list[BaseException] = []
+        for instance in reversed(roots):
+            try:
+                self.compositions.destroy_instance(instance.scope_id, instance.id)
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            details = "; ".join(
+                f"{type(item).__name__}: {item}" for item in errors
+            )
+            raise CompositionAssemblyError(
+                f"composition assembly shutdown failed: {details}"
+            )
+
 
 def assemble_compositions(settings: CompositionSettings) -> CompositionAssembly:
     """Validate, load, and start the configured trusted composition graph."""
@@ -58,7 +79,7 @@ def assemble_compositions(settings: CompositionSettings) -> CompositionAssembly:
                 owner_scope_id="startup",
             )
             created.append(configured.id)
-            compositions.start_instance("startup", configured.id)
+            compositions.initialize_instance("startup", configured.id)
     except Exception as exc:
         cleanup_errors: list[Exception] = []
         for instance_id in reversed(created):

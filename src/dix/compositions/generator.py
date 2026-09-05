@@ -136,10 +136,10 @@ def _render_runtime(
         lines.extend(
             (
                 "",
-                "    def start(self) -> None:",
+                "    def init(self) -> None:",
                 "        pass",
                 "",
-                "    def stop(self) -> None:",
+                "    def cleanup(self) -> None:",
                 "        pass",
             )
         )

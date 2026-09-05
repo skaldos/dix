@@ -120,8 +120,8 @@ def test_generator_adds_lifecycle_only_when_requested(tmp_path: Path) -> None:
 
     source = generate_runtime(spec, compositions, include_lifecycle=True).read_text()
 
-    assert "def start(self) -> None:" in source
-    assert "def stop(self) -> None:" in source
+    assert "def init(self) -> None:" in source
+    assert "def cleanup(self) -> None:" in source
 
 
 def test_generator_never_overwrites_runtime(tmp_path: Path) -> None:

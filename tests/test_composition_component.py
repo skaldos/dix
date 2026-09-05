@@ -118,7 +118,7 @@ def test_load_does_not_execute_lifecycle_hooks(tmp_path: Path) -> None:
         runtime=(
             "from pathlib import Path\n"
             "class Runtime:\n"
-            "    def start(self):\n"
+            "    def init(self):\n"
             f"        Path({str(marker)!r}).touch()\n"
         ),
     )
@@ -126,6 +126,29 @@ def test_load_does_not_execute_lifecycle_hooks(tmp_path: Path) -> None:
     component().load_module(module, module_id="acme/bundle")
 
     assert marker.exists() is False
+
+
+@pytest.mark.parametrize("hook", ["init", "cleanup"])
+def test_async_lifecycle_hook_is_rejected_during_load(
+    tmp_path: Path,
+    hook: str,
+) -> None:
+    module = tmp_path / "bundle"
+    write_composition(
+        module,
+        "item",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            f"    async def {hook}(self): pass\n"
+        ),
+    )
+
+    with pytest.raises(
+        CompositionComponentError,
+        match=rf"async lifecycle hooks are not supported: acme/bundle/item\.{hook}",
+    ):
+        component().load_module(module, module_id="acme/bundle")
 
 
 def test_duplicate_module_does_not_replace_loaded_state(tmp_path: Path) -> None:
