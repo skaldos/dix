@@ -1,0 +1,14 @@
+[composition]
+id = "typer_cli"
+
+[components]
+datamodel = "datamodel"
+
+[functions.describe]
+description = "Normalize and describe one CLI declaration against explicit call targets."
+
+[functions.build]
+description = "Build one Typer application from a normalized CLI declaration."
+
+[functions.invoke]
+description = "Build and invoke one CLI with explicit argv."
