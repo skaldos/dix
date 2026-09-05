@@ -131,19 +131,24 @@ class ModuleComponent:
             raise ModuleComponentError(f"cannot load module '{inspection.id}': {exc}") from exc
 
     def unload_module(self, module_id: str) -> LoadedModule:
-        """Remove one module only after all external dependents have been rejected."""
+        """Remove one module only after all definition and instance uses are gone."""
         loaded = self.require_module(module_id)
         composition_ids = set(loaded.compositions)
         application_ids = set(loaded.applications)
-        self._compositions._preflight_unload(module_id, composition_ids)
-        self._applications._preflight_unload(
-            module_id,
-            composition_ids,
-            application_ids,
+        blockers = (
+            *self._compositions._unload_blockers(module_id, composition_ids),
+            *self._applications._unload_blockers(
+                module_id,
+                composition_ids,
+                application_ids,
+            ),
         )
+        if blockers:
+            details = "\n".join(f"- {item}" for item in sorted(blockers))
+            raise ModuleComponentError(
+                f"module '{module_id}' cannot be unloaded while it is in use:\n{details}"
+            )
 
-        self._applications._destroy_module_roots(module_id)
-        self._compositions._destroy_module_roots(module_id, composition_ids)
         self._applications._unpublish_definitions(tuple(application_ids))
         self._compositions._unpublish_definitions(tuple(composition_ids))
         del self._modules[module_id]

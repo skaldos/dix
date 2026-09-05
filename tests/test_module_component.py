@@ -10,7 +10,9 @@ from dix.core import (
     ModuleComponent,
     create_core_component_registry,
 )
-from dix.core.application import ApplicationComponentError
+from dix.core.application import ApplicationInstanceSpec
+from dix.core.composition import CompositionInstanceSpec
+from dix.core.module.component import ModuleComponentError
 
 COMPOSITION_RUNTIME = """\
 class Runtime:
@@ -180,7 +182,7 @@ class Runtime:
     loaded = modules.load_module(base, module_id="acme/base")
     modules.load_module(dependent, module_id="acme/dependent")
 
-    with pytest.raises(ApplicationComponentError, match="required by loaded application"):
+    with pytest.raises(ModuleComponentError, match="loaded application definition"):
         modules.unload_module("acme/base")
 
     assert modules.require_module("acme/base") is loaded
@@ -297,3 +299,42 @@ class Runtime:
 
     assert modules.modules() == ()
     assert applications.definitions() == ()
+
+
+def test_unload_reports_every_live_use_without_mutation(tmp_path: Path) -> None:
+    module = tmp_path / "mixed"
+    write_composition(module, "data")
+    write_application(module, "tool")
+    modules, compositions, applications = runtime_components()
+    loaded = modules.load_module(module, module_id="acme/mixed")
+    composition = compositions.create_instance(
+        CompositionInstanceSpec("data", "acme/mixed/data", {}, tmp_path),
+        owner_scope_id="z-owner",
+    )
+    application = applications.create_instance(
+        ApplicationInstanceSpec("tool", "acme/mixed/tool", {}, tmp_path),
+        owner_scope_id="a-owner",
+    )
+
+    with pytest.raises(ModuleComponentError) as captured:
+        modules.unload_module("acme/mixed")
+
+    message = str(captured.value)
+    application_line = (
+        "live application definition 'acme/mixed/tool' from module 'acme/mixed': "
+        "scope='a-owner', instance='tool', root='tool'"
+    )
+    composition_line = (
+        "live composition definition 'acme/mixed/data' from module 'acme/mixed': "
+        "scope='z-owner', instance='data', root='data'"
+    )
+    assert application_line in message
+    assert composition_line in message
+    assert message.index(application_line) < message.index(composition_line)
+    assert modules.require_module("acme/mixed") is loaded
+    assert compositions.require_instance("z-owner", "data") is composition
+    assert applications.require_instance("a-owner", "tool") is application
+
+    applications.destroy_instance("a-owner", "tool")
+    compositions.destroy_instance("z-owner", "data")
+    assert modules.unload_module("acme/mixed") is loaded

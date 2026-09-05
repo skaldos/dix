@@ -14,6 +14,7 @@ from dix.core.application import (
     ApplicationComponentError,
     ApplicationInstanceSpec,
 )
+from dix.core.module.component import ModuleComponentError
 
 
 def write_composition(module: Path, local_id: str, spec: str, runtime: str) -> None:
@@ -322,12 +323,18 @@ class Runtime:
     assert len(compositions.instances()) == 2
 
 
-def test_module_unload_destroys_owned_inactive_application_graphs(tmp_path: Path) -> None:
+def test_module_unload_requires_explicit_application_graph_destroy(tmp_path: Path) -> None:
     module = tmp_path / "module"
     write_runtime_graph(module)
     modules, compositions, applications = runtime_components(module)
     create_root(applications, tmp_path)
 
+    with pytest.raises(ModuleComponentError, match="live application definition"):
+        modules.unload_module("acme/runtime")
+
+    assert applications.instances()
+    assert compositions.instances()
+    applications.destroy_instance("test", "root")
     modules.unload_module("acme/runtime")
 
     assert applications.instances() == ()

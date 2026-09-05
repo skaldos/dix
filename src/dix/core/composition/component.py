@@ -105,42 +105,29 @@ class CompositionComponent:
         for loaded in staged.values():
             self._remove_runtime_modules(loaded.runtime_module_name)
 
-    def _preflight_unload(self, module_id: str, owned_ids: set[str]) -> None:
-        for definition_id, candidate in self._definitions.items():
+    def _unload_blockers(self, module_id: str, owned_ids: set[str]) -> tuple[str, ...]:
+        blockers: list[str] = []
+        for definition_id, candidate in sorted(self._definitions.items()):
             if definition_id in owned_ids:
                 continue
             for dependency in candidate.definition.compositions.values():
                 if dependency.use in owned_ids:
-                    raise CompositionComponentError(
-                        f"module '{module_id}' is required by loaded composition '{definition_id}'"
+                    blockers.append(
+                        "loaded composition definition "
+                        f"'{definition_id}' requires '{dependency.use}' from module '{module_id}'"
                     )
-        for graph_key, instance_ids in self._root_graphs.items():
+        for graph_key, instance_ids in sorted(self._root_graphs.items()):
             root = self._instances[(graph_key[0], graph_key[1])]
-            if root.module_id == module_id:
-                continue
-            if any(
-                self._instances[(graph_key[0], instance_id)].definition_id in owned_ids
-                for instance_id in instance_ids
-            ):
-                raise CompositionComponentError(
-                    f"module '{module_id}' is used by externally rooted instance graph "
-                    f"'{root.scope_id}/{root.id}'"
+            for instance_id in sorted(instance_ids):
+                instance = self._instances[(graph_key[0], instance_id)]
+                if instance.definition_id not in owned_ids:
+                    continue
+                blockers.append(
+                    f"live composition definition '{instance.definition_id}' from module "
+                    f"'{module_id}': scope='{root.scope_id}', instance='{instance.id}', "
+                    f"root='{root.id}'"
                 )
-
-    def _destroy_module_roots(self, module_id: str, owned_ids: set[str]) -> None:
-        owned_graphs: list[tuple[str, str]] = []
-        for graph_key, instance_ids in self._root_graphs.items():
-            root = self._instances[(graph_key[0], graph_key[1])]
-            graph_uses_target = any(
-                self._instances[(graph_key[0], instance_id)].definition_id in owned_ids
-                for instance_id in instance_ids
-            )
-            if not graph_uses_target:
-                continue
-            if root.module_id == module_id:
-                owned_graphs.append(graph_key)
-        for scope_id, root_instance_id in owned_graphs:
-            self.destroy_instance(scope_id, root_instance_id)
+        return tuple(sorted(set(blockers)))
 
     def definitions(self) -> tuple[CompositionDefinition, ...]:
         return tuple(self._definitions[item].definition for item in sorted(self._definitions))

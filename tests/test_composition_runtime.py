@@ -467,7 +467,7 @@ use = "test/base/base"
         owner_scope_id="owner",
     )
 
-    with pytest.raises(CompositionComponentError, match="required by loaded composition"):
+    with pytest.raises(ModuleComponentError, match="loaded composition definition"):
         modules.unload_module("test/base")
 
     assert len(compositions.instances()) == 2

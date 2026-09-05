@@ -366,46 +366,42 @@ class ApplicationComponent:
         for loaded in staged.values():
             self._remove_runtime_modules(loaded.runtime_module_name)
 
-    def _preflight_unload(
+    def _unload_blockers(
         self,
         module_id: str,
         owned_composition_ids: set[str],
         owned_application_ids: set[str],
-    ) -> None:
-        for application_id, candidate in self._definitions.items():
+    ) -> tuple[str, ...]:
+        blockers: list[str] = []
+        for application_id, candidate in sorted(self._definitions.items()):
             if application_id in owned_application_ids:
                 continue
             for dependency in candidate.definition.compositions.values():
                 if dependency.use in owned_composition_ids:
-                    raise ApplicationComponentError(
-                        f"module '{module_id}' is required by loaded application '{application_id}'"
+                    blockers.append(
+                        "loaded application definition "
+                        f"'{application_id}' requires composition '{dependency.use}' from "
+                        f"module '{module_id}'"
                     )
             for dependency in candidate.definition.applications.values():
                 if dependency.use in owned_application_ids:
-                    raise ApplicationComponentError(
-                        f"module '{module_id}' is required by loaded application '{application_id}'"
+                    blockers.append(
+                        "loaded application definition "
+                        f"'{application_id}' requires application '{dependency.use}' from "
+                        f"module '{module_id}'"
                     )
-        for graph_key, instance_ids in self._root_graphs.items():
+        for graph_key, instance_ids in sorted(self._root_graphs.items()):
             root = self._instances[(graph_key[0], graph_key[1])]
-            if root.module_id == module_id:
-                continue
-            if any(
-                self._instances[(graph_key[0], instance_id)].definition_id in owned_application_ids
-                for instance_id in instance_ids
-            ):
-                raise ApplicationComponentError(
-                    f"module '{module_id}' is used by externally rooted application graph "
-                    f"'{root.scope_id}/{root.id}'"
+            for instance_id in sorted(instance_ids):
+                instance = self._instances[(graph_key[0], instance_id)]
+                if instance.definition_id not in owned_application_ids:
+                    continue
+                blockers.append(
+                    f"live application definition '{instance.definition_id}' from module "
+                    f"'{module_id}': scope='{root.scope_id}', instance='{instance.id}', "
+                    f"root='{root.id}'"
                 )
-
-    def _destroy_module_roots(self, module_id: str) -> None:
-        roots = [
-            (scope_id, root_id)
-            for scope_id, root_id in self._root_graphs
-            if self._instances[(scope_id, root_id)].module_id == module_id
-        ]
-        for scope_id, root_id in roots:
-            self.destroy_instance(scope_id, root_id)
+        return tuple(sorted(set(blockers)))
 
     def _validate_loaded_graph(
         self,

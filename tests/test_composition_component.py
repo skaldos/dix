@@ -215,7 +215,7 @@ use = "acme/base/item"
     base_loaded = modules.load_module(base, module_id="acme/base")
     modules.load_module(dependent, module_id="acme/dependent")
 
-    with pytest.raises(CompositionComponentError, match="required by loaded composition"):
+    with pytest.raises(ModuleComponentError, match="loaded composition definition"):
         modules.unload_module("acme/base")
 
     assert modules.require_module("acme/base") is base_loaded
