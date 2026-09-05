@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 ComponentLifetime = Literal["composition", "runtime"]
 
@@ -16,7 +17,7 @@ class ComponentProvider:
 
     id: str
     lifetime: ComponentLifetime
-    create: Callable[["ComponentScope"], object]
+    create: Callable[[ComponentScope], object]
 
     def __post_init__(self) -> None:
         component_id = self.id.strip()
@@ -36,7 +37,7 @@ class ComponentProvider:
 class ComponentScope:
     """Lazy component-instance scope owned by one composition node."""
 
-    def __init__(self, registry: "ComponentRegistry", scope_id: str) -> None:
+    def __init__(self, registry: ComponentRegistry, scope_id: str) -> None:
         normalized_id = scope_id.strip()
         if not normalized_id:
             raise ComponentRegistryError("component scope id must not be empty")
@@ -49,9 +50,7 @@ class ComponentScope:
         """Resolve and type-check one component in this scope."""
         provider = self._registry.require_provider(component_id)
         instances = (
-            self._registry._runtime_instances
-            if provider.lifetime == "runtime"
-            else self._instances
+            self._registry._runtime_instances if provider.lifetime == "runtime" else self._instances
         )
         if provider.id not in instances:
             self._create(provider, instances)
@@ -99,9 +98,7 @@ class ComponentRegistry:
         if not isinstance(provider, ComponentProvider):
             raise ComponentRegistryError("provider must be a ComponentProvider")
         if provider.id in self._providers:
-            raise ComponentRegistryError(
-                f"component provider already registered: {provider.id}"
-            )
+            raise ComponentRegistryError(f"component provider already registered: {provider.id}")
         self._providers[provider.id] = provider
 
     def require_provider(self, component_id: str) -> ComponentProvider:
@@ -126,9 +123,11 @@ class ComponentRegistry:
 
 def create_core_component_registry() -> ComponentRegistry:
     """Build the provider registry for the primitive core capabilities."""
+    from .application import ApplicationComponent
+    from .composition import CompositionComponent
     from .datamodel import DatamodelComponent
     from .element import ElementComponent
-    from .composition import CompositionComponent
+    from .module.component import ModuleComponent
 
     registry = ComponentRegistry()
     registry.register_provider(
@@ -152,6 +151,25 @@ def create_core_component_registry() -> ComponentRegistry:
             id="composition",
             lifetime="runtime",
             create=lambda scope: CompositionComponent(components=registry),
+        )
+    )
+    registry.register_provider(
+        ComponentProvider(
+            id="application",
+            lifetime="runtime",
+            create=lambda scope: ApplicationComponent(
+                compositions=scope.require("composition", CompositionComponent)
+            ),
+        )
+    )
+    registry.register_provider(
+        ComponentProvider(
+            id="module",
+            lifetime="runtime",
+            create=lambda scope: ModuleComponent(
+                compositions=scope.require("composition", CompositionComponent),
+                applications=scope.require("application", ApplicationComponent),
+            ),
         )
     )
     return registry

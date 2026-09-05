@@ -4,9 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from dix.core import CompositionComponent, DatamodelComponent, create_core_component_registry
+from dix.core import (
+    CompositionComponent,
+    DatamodelComponent,
+    ModuleComponent,
+    create_core_component_registry,
+)
 from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
-
 
 MODEL_TOML = """
 [model]
@@ -44,10 +48,13 @@ def write_model(path: Path) -> Path:
     return path
 
 
-def datamodel_files_component(tmp_path: Path) -> tuple[CompositionComponent, object]:
+def datamodel_files_component(
+    tmp_path: Path,
+) -> tuple[ModuleComponent, CompositionComponent, object]:
     registry = create_core_component_registry()
+    modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
-    compositions.load_module(
+    modules.load_module(
         repo_root() / "examples" / "modules" / "dix" / "examples" / "files",
         module_id="dix/examples/files",
     )
@@ -60,11 +67,11 @@ def datamodel_files_component(tmp_path: Path) -> tuple[CompositionComponent, obj
         ),
         owner_scope_id="test",
     )
-    return compositions, root
+    return modules, compositions, root
 
 
 def test_direct_runtime_registers_model_and_loads_data(tmp_path: Path) -> None:
-    _, root = datamodel_files_component(tmp_path)
+    _, _, root = datamodel_files_component(tmp_path)
 
     model = root.api.register_model(write_model(tmp_path / "model.toml"))
     result = root.api.load_data(DATA_JSON)
@@ -81,7 +88,7 @@ def test_direct_runtime_registers_model_and_loads_data(tmp_path: Path) -> None:
 
 
 def test_integer_wrapper_is_local_to_composition_datamodel(tmp_path: Path) -> None:
-    _, root = datamodel_files_component(tmp_path)
+    _, _, root = datamodel_files_component(tmp_path)
     wrapped = root.api.register_model(write_model(tmp_path / "model.toml"))
     datamodel: DatamodelComponent = root.runtime.datamodel
     base = datamodel.register_model(wrapped.definition)
@@ -98,7 +105,7 @@ def test_integer_wrapper_is_local_to_composition_datamodel(tmp_path: Path) -> No
 
 
 def test_runtime_rejects_invalid_model_and_data_input(tmp_path: Path) -> None:
-    _, root = datamodel_files_component(tmp_path)
+    _, _, root = datamodel_files_component(tmp_path)
     invalid_model = tmp_path / "invalid.toml"
     invalid_model.write_text("[model\n")
 
@@ -113,7 +120,7 @@ def test_runtime_rejects_invalid_model_and_data_input(tmp_path: Path) -> None:
 
 
 def test_runtime_rejects_unknown_and_ambiguous_local_models(tmp_path: Path) -> None:
-    _, root = datamodel_files_component(tmp_path)
+    _, _, root = datamodel_files_component(tmp_path)
 
     with pytest.raises(Exception, match="not registered"):
         root.api.load_data(DATA_JSON)
@@ -126,7 +133,7 @@ def test_runtime_rejects_unknown_and_ambiguous_local_models(tmp_path: Path) -> N
 
 
 def test_two_roots_have_isolated_datamodel_registries(tmp_path: Path) -> None:
-    compositions, first = datamodel_files_component(tmp_path)
+    _, compositions, first = datamodel_files_component(tmp_path)
     second = compositions.create_instance(
         CompositionInstanceSpec(
             id="other",

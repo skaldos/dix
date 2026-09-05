@@ -14,15 +14,15 @@ def write_demo_interface(root: Path) -> None:
     interface_dir = root / "interfaces"
     interface_dir.mkdir()
     (interface_dir / "demo_request.toml").write_text(
-        '[interface]\n'
+        "[interface]\n"
         'id = "demo_request"\n'
         'title = "Demo Request"\n'
         'access = { mode = "public" }\n\n'
-        '[[components]]\n'
+        "[[components]]\n"
         'id = "request_title"\n'
         'use = "input"\n'
         'config = { label = "Title", placeholder = "Short request title" }\n\n'
-        '[[components]]\n'
+        "[[components]]\n"
         'id = "request_kind"\n'
         'use = "select"\n'
         'config = { label = "Kind", mode = "single", options = ['
@@ -102,6 +102,7 @@ def test_reference_renderer_can_be_disabled(tmp_path: Path) -> None:
     assert client.get("/render/demo_request").status_code == 404
     assert client.get("/api/interfaces/demo_request/model").status_code == 200
 
+
 def test_reference_renderer_path_is_configurable(tmp_path: Path) -> None:
     write_demo_interface(tmp_path)
     client = TestClient(create_app(app_config(tmp_path, reference_renderer_path="/ui")))
@@ -116,10 +117,7 @@ def test_serve_preserves_source_directory_for_relative_module_roots(
     module_root = Path(__file__).resolve().parents[1] / "examples" / "modules"
     config_path = tmp_path / "dix.toml"
     relative_root = os.path.relpath(module_root, tmp_path)
-    config_path.write_text(
-        "[composition]\n"
-        f'trusted_module_roots = ["{relative_root}"]\n'
-    )
+    config_path.write_text(f'[composition]\ntrusted_module_roots = ["{relative_root}"]\n')
     effective = load_effective_config(paths=[config_path], env={})
     calls: dict[str, object] = {}
 
@@ -131,4 +129,4 @@ def test_serve_preserves_source_directory_for_relative_module_roots(
 
     assert server_module.serve() == 0
     app = calls["app"]
-    assert app.state.composition_component.require_module("dix/examples/files")
+    assert app.state.module_component.require_module("dix/examples/files")

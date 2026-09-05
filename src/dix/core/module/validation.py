@@ -17,9 +17,10 @@ def normalize_module_id(module_id: str) -> str:
         raise ModuleSpecError("module id must be a string")
     value = module_id.strip().replace("\\", "/")
     parts = value.split("/")
-    if not value or value.startswith("/") or any(
-        not part or part in {".", ".."} or not ID_SEGMENT.fullmatch(part)
-        for part in parts
+    if (
+        not value
+        or value.startswith("/")
+        or any(not part or part in {".", ".."} or not ID_SEGMENT.fullmatch(part) for part in parts)
     ):
         raise ModuleSpecError(f"invalid module id: {module_id!r}")
     return "/".join(parts)

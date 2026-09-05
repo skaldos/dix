@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from dix.compositions.generator import CompositionGeneratorError, generate_runtime
-from dix.core import CompositionComponent, create_core_component_registry
+from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 
 
@@ -18,7 +18,9 @@ def write_composition(module: Path, local_id: str, body: str, runtime: str) -> P
     return root
 
 
-def component_with_base(tmp_path: Path, runtime: str | None = None) -> CompositionComponent:
+def component_with_base(
+    tmp_path: Path, runtime: str | None = None
+) -> tuple[ModuleComponent, CompositionComponent]:
     module = tmp_path / "base-module"
     write_composition(
         module,
@@ -47,9 +49,10 @@ description = "Not consumed by the generated child."
 """,
     )
     registry = create_core_component_registry()
+    modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
-    compositions.load_module(module, module_id="acme/base")
-    return compositions
+    modules.load_module(module, module_id="acme/base")
+    return modules, compositions
 
 
 def write_child_source(tmp_path: Path) -> Path:
@@ -76,7 +79,7 @@ description = "Provide local behavior."
 
 
 def test_generator_creates_protocol_constructor_wrappers_and_stub(tmp_path: Path) -> None:
-    compositions = component_with_base(tmp_path)
+    modules, compositions = component_with_base(tmp_path)
     spec = write_child_source(tmp_path)
 
     target = generate_runtime(spec, compositions)
@@ -96,7 +99,7 @@ def test_generator_creates_protocol_constructor_wrappers_and_stub(tmp_path: Path
     assert "raise NotImplementedError" in source
     compile(source, str(target), "exec")
 
-    compositions.load_module(spec.parents[2], module_id="acme/child")
+    modules.load_module(spec.parents[2], module_id="acme/child")
     root = compositions.create_instance(
         CompositionInstanceSpec("child", "acme/child/child", {}, tmp_path),
         owner_scope_id="owner",
@@ -115,7 +118,7 @@ def test_generator_creates_protocol_constructor_wrappers_and_stub(tmp_path: Path
 
 
 def test_generator_adds_lifecycle_only_when_requested(tmp_path: Path) -> None:
-    compositions = component_with_base(tmp_path)
+    _, compositions = component_with_base(tmp_path)
     spec = write_child_source(tmp_path)
 
     source = generate_runtime(spec, compositions, include_lifecycle=True).read_text()
@@ -125,7 +128,7 @@ def test_generator_adds_lifecycle_only_when_requested(tmp_path: Path) -> None:
 
 
 def test_generator_never_overwrites_runtime(tmp_path: Path) -> None:
-    compositions = component_with_base(tmp_path)
+    _, compositions = component_with_base(tmp_path)
     spec = write_child_source(tmp_path)
     target = generate_runtime(spec, compositions)
     original = target.read_text()
@@ -137,7 +140,7 @@ def test_generator_never_overwrites_runtime(tmp_path: Path) -> None:
 
 
 def test_unrepresentable_default_is_rejected_without_partial_runtime(tmp_path: Path) -> None:
-    compositions = component_with_base(
+    _, compositions = component_with_base(
         tmp_path,
         runtime="""SENTINEL = object()
 class Runtime:
@@ -159,7 +162,7 @@ class Runtime:
 def test_generated_annotation_falls_back_to_object_when_not_stably_importable(
     tmp_path: Path,
 ) -> None:
-    compositions = component_with_base(
+    _, compositions = component_with_base(
         tmp_path,
         runtime="""from pathlib import Path
 class Runtime:

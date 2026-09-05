@@ -13,7 +13,6 @@ from .models import (
     CompositionRuntimeContext,
     CompositionSource,
     LoadedCompositionDefinition,
-    LoadedModule,
 )
 from .runtime import CompositionApi, CompositionRuntimeError
 from .component import (
@@ -55,7 +54,6 @@ __all__ = [
     "CompositionSource",
     "CompositionSpecError",
     "LoadedCompositionDefinition",
-    "LoadedModule",
     "ModuleDescriptor",
     "ModuleInspection",
     "discover_modules",

@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from dix.core import CompositionComponent, create_core_component_registry
+from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionComponentError
+from dix.core.module.component import ModuleComponentError
 
 
 def write_composition(
@@ -13,20 +14,21 @@ def write_composition(
     local_id: str,
     *,
     body: str | None = None,
-    runtime: str = "class Runtime:\n    pass\n",
+    runtime: str = ("class Runtime:\n    def __init__(self, *, context, config): pass\n"),
 ) -> Path:
     root = module / "compositions" / local_id
     root.mkdir(parents=True)
-    (root / "composition.toml").write_text(
-        body or f'[composition]\nid = "{local_id}"\n'
-    )
+    (root / "composition.toml").write_text(body or f'[composition]\nid = "{local_id}"\n')
     (root / "runtime.py").write_text(runtime)
     return root
 
 
-def component() -> CompositionComponent:
+def components() -> tuple[ModuleComponent, CompositionComponent]:
     registry = create_core_component_registry()
-    return registry.require("composition", CompositionComponent)
+    return (
+        registry.require("module", ModuleComponent),
+        registry.require("composition", CompositionComponent),
+    )
 
 
 def test_composition_component_is_runtime_scoped() -> None:
@@ -42,17 +44,17 @@ def test_load_module_publishes_all_definitions_in_sorted_order(tmp_path: Path) -
     module = tmp_path / "bundle"
     write_composition(module, "second")
     write_composition(module, "first")
-    compositions = component()
+    modules, compositions = components()
 
-    loaded = compositions.load_module(module, module_id="acme/bundle")
+    loaded = modules.load_module(module, module_id="acme/bundle")
 
     assert tuple(loaded.compositions) == ("acme/bundle/first", "acme/bundle/second")
     assert [item.id for item in compositions.definitions()] == [
         "acme/bundle/first",
         "acme/bundle/second",
     ]
-    assert [item.id for item in compositions.module_descriptors()] == ["acme/bundle"]
-    assert compositions.require_module("acme/bundle") is loaded
+    assert [item.id for item in modules.module_descriptors()] == ["acme/bundle"]
+    assert modules.require_module("acme/bundle") is loaded
 
 
 def test_runtime_can_import_composition_local_python_modules(tmp_path: Path) -> None:
@@ -60,11 +62,16 @@ def test_runtime_can_import_composition_local_python_modules(tmp_path: Path) -> 
     root = write_composition(
         module,
         "item",
-        runtime="from .helper import VALUE\nclass Runtime:\n    value = VALUE\n",
+        runtime=(
+            "from .helper import VALUE\n"
+            "class Runtime:\n"
+            "    value = VALUE\n"
+            "    def __init__(self, *, context, config): pass\n"
+        ),
     )
     (root / "helper.py").write_text("VALUE = 'local'\n")
 
-    loaded = component().load_module(module, module_id="acme/bundle")
+    loaded = components()[0].load_module(module, module_id="acme/bundle")
 
     assert loaded.compositions["acme/bundle/item"].runtime_type.value == "local"
 
@@ -77,17 +84,17 @@ def test_digest_mismatch_prevents_candidate_import(tmp_path: Path) -> None:
         "item",
         runtime=f"from pathlib import Path\nPath({str(marker)!r}).touch()\nclass Runtime: pass\n",
     )
-    compositions = component()
+    modules, _ = components()
 
-    with pytest.raises(CompositionComponentError, match="digest mismatch"):
-        compositions.load_module(
+    with pytest.raises(ModuleComponentError, match="digest mismatch"):
+        modules.load_module(
             module,
             module_id="acme/bundle",
             expected_artifact_digest="0" * 64,
         )
 
     assert marker.exists() is False
-    assert compositions.modules() == ()
+    assert modules.modules() == ()
 
 
 def test_invalid_runtime_leaves_no_partial_registry_state(tmp_path: Path) -> None:
@@ -99,13 +106,13 @@ def test_invalid_runtime_leaves_no_partial_registry_state(tmp_path: Path) -> Non
         runtime=f"from pathlib import Path\nPath({str(marker)!r}).touch()\nclass Runtime: pass\n",
     )
     write_composition(module, "second", runtime="class NotRuntime: pass\n")
-    compositions = component()
+    modules, compositions = components()
 
-    with pytest.raises(CompositionComponentError, match="runtime.py:Runtime"):
-        compositions.load_module(module, module_id="acme/bundle")
+    with pytest.raises(ModuleComponentError, match="runtime.py:Runtime"):
+        modules.load_module(module, module_id="acme/bundle")
 
     assert marker.exists() is True
-    assert compositions.modules() == ()
+    assert modules.modules() == ()
     assert compositions.definitions() == ()
 
 
@@ -118,12 +125,13 @@ def test_load_does_not_execute_lifecycle_hooks(tmp_path: Path) -> None:
         runtime=(
             "from pathlib import Path\n"
             "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
             "    def init(self):\n"
             f"        Path({str(marker)!r}).touch()\n"
         ),
     )
 
-    component().load_module(module, module_id="acme/bundle")
+    components()[0].load_module(module, module_id="acme/bundle")
 
     assert marker.exists() is False
 
@@ -145,32 +153,32 @@ def test_async_lifecycle_hook_is_rejected_during_load(
     )
 
     with pytest.raises(
-        CompositionComponentError,
+        ModuleComponentError,
         match=rf"async lifecycle hooks are not supported: acme/bundle/item\.{hook}",
     ):
-        component().load_module(module, module_id="acme/bundle")
+        components()[0].load_module(module, module_id="acme/bundle")
 
 
 def test_duplicate_module_does_not_replace_loaded_state(tmp_path: Path) -> None:
     module = tmp_path / "bundle"
     write_composition(module, "item")
-    compositions = component()
-    loaded = compositions.load_module(module, module_id="acme/bundle")
+    modules, _ = components()
+    loaded = modules.load_module(module, module_id="acme/bundle")
 
-    with pytest.raises(CompositionComponentError, match="already loaded"):
-        compositions.load_module(module, module_id="acme/bundle")
+    with pytest.raises(ModuleComponentError, match="already loaded"):
+        modules.load_module(module, module_id="acme/bundle")
 
-    assert compositions.require_module("acme/bundle") is loaded
+    assert modules.require_module("acme/bundle") is loaded
 
 
 def test_unload_removes_an_instance_free_module(tmp_path: Path) -> None:
     module = tmp_path / "bundle"
     write_composition(module, "item")
-    compositions = component()
-    loaded = compositions.load_module(module, module_id="acme/bundle")
+    modules, compositions = components()
+    loaded = modules.load_module(module, module_id="acme/bundle")
 
-    assert compositions.unload_module("acme/bundle") is loaded
-    assert compositions.modules() == ()
+    assert modules.unload_module("acme/bundle") is loaded
+    assert modules.modules() == ()
     assert compositions.definitions() == ()
 
 
@@ -186,15 +194,16 @@ id = "child"
 [compositions.base]
 use = "acme/base/item"
 """,
+        runtime=("class Runtime:\n    def __init__(self, *, context, config, base): pass\n"),
     )
-    compositions = component()
-    base_loaded = compositions.load_module(base, module_id="acme/base")
-    compositions.load_module(dependent, module_id="acme/dependent")
+    modules, _ = components()
+    base_loaded = modules.load_module(base, module_id="acme/base")
+    modules.load_module(dependent, module_id="acme/dependent")
 
     with pytest.raises(CompositionComponentError, match="required by loaded composition"):
-        compositions.unload_module("acme/base")
+        modules.unload_module("acme/base")
 
-    assert compositions.require_module("acme/base") is base_loaded
+    assert modules.require_module("acme/base") is base_loaded
 
 
 def test_dependency_graph_contains_component_and_composition_edges(tmp_path: Path) -> None:
@@ -211,10 +220,11 @@ model = "datamodel"
 [compositions.base]
 use = "acme/base/item"
 """,
+        runtime=("class Runtime:\n    def __init__(self, *, context, config, model, base): pass\n"),
     )
-    compositions = component()
-    compositions.load_module(base, module_id="acme/base")
-    compositions.load_module(child, module_id="acme/child")
+    modules, compositions = components()
+    modules.load_module(base, module_id="acme/base")
+    modules.load_module(child, module_id="acme/child")
 
     graph = compositions.describe_dependency_graph("acme/child/item")
 

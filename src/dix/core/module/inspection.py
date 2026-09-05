@@ -46,12 +46,8 @@ def inspect_module(root: Path, *, module_id: str) -> ModuleInspection:
         id=normalized_module_id,
         root=module_root,
         artifact_digest=artifact_digest(module_root),
-        composition_definitions=tuple(
-            sorted(composition_definitions, key=lambda item: item.id)
-        ),
-        application_definitions=tuple(
-            sorted(application_definitions, key=lambda item: item.id)
-        ),
+        composition_definitions=tuple(sorted(composition_definitions, key=lambda item: item.id)),
+        application_definitions=tuple(sorted(application_definitions, key=lambda item: item.id)),
     )
 
 

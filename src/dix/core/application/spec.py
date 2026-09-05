@@ -9,9 +9,11 @@ from dix.core.composition.models import CompositionDependencySpec
 from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import (
     canonical_file,
-    normalize_local_id as normalize_artifact_local_id,
     normalize_module_id,
     require_contained,
+)
+from dix.core.module.validation import (
+    normalize_local_id as normalize_artifact_local_id,
 )
 
 from .models import (
@@ -88,7 +90,7 @@ def inspect_application_source(path: Path) -> ApplicationSource:
     )
     shared_aliases = set(compositions) & set(applications)
     if shared_aliases:
-        alias = sorted(shared_aliases)[0]
+        alias = min(shared_aliases)
         raise ApplicationSpecError(
             f"dependency alias is used by both compositions and apps: {alias}"
         )

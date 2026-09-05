@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dix.core import CompositionComponent, create_core_component_registry
+from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 
 
@@ -70,14 +70,15 @@ description = "Local."
 """,
     )
     registry = create_core_component_registry()
+    modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
 
-    inspection = compositions.inspect_module(module, module_id="pressure/bundle")
+    inspection = modules.inspect_module(module, module_id="pressure/bundle")
     assert [item.local_id for item in inspection.composition_definitions] == [
         "base",
         "child",
     ]
-    compositions.load_module(
+    modules.load_module(
         module,
         module_id="pressure/bundle",
         expected_artifact_digest=inspection.artifact_digest,
@@ -97,9 +98,9 @@ description = "Local."
     assert first.api.base_label() == "base"
     assert first.api.local() == "child"
     assert compositions.describe_function("pressure/bundle/child", "echo").origin == "base.echo"
-    assert compositions.describe_function(
-        "pressure/bundle/child", "base_label"
-    ).origin == "base.label"
+    assert (
+        compositions.describe_function("pressure/bundle/child", "base_label").origin == "base.label"
+    )
 
     compositions.initialize_instance("pressure", "first")
     compositions.cleanup_instance("pressure", "first")

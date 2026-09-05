@@ -1,5 +1,17 @@
 """Primitive, renderer-independent dix capabilities."""
 
+from .application import ApplicationComponent, ApplicationComponentError
+from .composition import CompositionComponent, CompositionComponentError
+from .datamodel import (
+    DatamodelComponent,
+    DatamodelError,
+    ModelDefinition,
+    ModelIssue,
+    ModelNotFound,
+    ModelResult,
+    RegisteredModel,
+    RegisteredModelDescriptor,
+)
 from .element import (
     ElementBinding,
     ElementBindingError,
@@ -14,16 +26,7 @@ from .element import (
     ElementTypeDescriptor,
     UnknownElementType,
 )
-from .datamodel import (
-    DatamodelComponent,
-    DatamodelError,
-    ModelDefinition,
-    ModelIssue,
-    ModelNotFound,
-    ModelResult,
-    RegisteredModel,
-    RegisteredModelDescriptor,
-)
+from .module.component import ModuleComponent, ModuleComponentError
 from .registry import (
     ComponentLifetime,
     ComponentProvider,
@@ -32,17 +35,17 @@ from .registry import (
     ComponentScope,
     create_core_component_registry,
 )
-from .composition import CompositionComponent, CompositionComponentError
 
 __all__ = [
-    "CompositionComponent",
-    "CompositionComponentError",
+    "ApplicationComponent",
+    "ApplicationComponentError",
     "ComponentLifetime",
     "ComponentProvider",
     "ComponentRegistry",
     "ComponentRegistryError",
     "ComponentScope",
-    "create_core_component_registry",
+    "CompositionComponent",
+    "CompositionComponentError",
     "DatamodelComponent",
     "DatamodelError",
     "ElementBinding",
@@ -60,7 +63,10 @@ __all__ = [
     "ModelIssue",
     "ModelNotFound",
     "ModelResult",
+    "ModuleComponent",
+    "ModuleComponentError",
     "RegisteredModel",
     "RegisteredModelDescriptor",
     "UnknownElementType",
+    "create_core_component_registry",
 ]

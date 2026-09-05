@@ -17,6 +17,56 @@ def write_composition(module: Path, local_id: str, body: str, runtime: str) -> N
     (root / "runtime.py").write_text(runtime)
 
 
+def write_application(module: Path, local_id: str, body: str, runtime: str) -> None:
+    root = module / "apps" / local_id
+    root.mkdir(parents=True)
+    (root / "app.toml").write_text(body)
+    (root / "runtime.py").write_text(runtime)
+
+
+def test_assembly_orders_cross_module_application_dependencies(tmp_path: Path) -> None:
+    roots = tmp_path / "modules"
+    write_composition(
+        roots / "z-data",
+        "data",
+        '[composition]\nid = "data"\n',
+        "class Runtime:\n    def __init__(self, *, context, config): pass\n",
+    )
+    write_application(
+        roots / "m-base",
+        "base",
+        '[app]\nid = "base"\n',
+        "class Runtime:\n    def __init__(self, *, context, config): pass\n",
+    )
+    write_application(
+        roots / "a-root",
+        "root",
+        """\
+[app]
+id = "root"
+[compositions.data]
+use = "z-data/data"
+[apps.base]
+use = "m-base/base"
+""",
+        """\
+class Runtime:
+    def __init__(self, *, context, config, data, base): pass
+""",
+    )
+    config_path = tmp_path / "dix.toml"
+    config_path.write_text('[composition]\ntrusted_module_roots = ["modules"]\n')
+    effective = load_effective_config(paths=[config_path], env={})
+
+    assembly = assemble_compositions(effective.composition)
+
+    assert [item.id for item in assembly.modules.module_descriptors()] == [
+        "a-root",
+        "m-base",
+        "z-data",
+    ]
+
+
 def test_configured_startup_loads_dependencies_and_initializes_only_enabled_instances(
     tmp_path: Path,
 ) -> None:
@@ -77,7 +127,10 @@ startup = false
     app = create_app(effective)
     compositions = app.state.composition_component
 
-    assert [item.inspection.id for item in compositions.modules()] == ["a-root", "z-base"]
+    assert [item.inspection.id for item in app.state.module_component.modules()] == [
+        "a-root",
+        "z-base",
+    ]
     assert [item.id for item in compositions.instances(scope_id="startup")] == [
         "enabled",
         "enabled/base",
@@ -86,9 +139,7 @@ startup = false
     root = compositions.require_instance("startup", "enabled")
     child = compositions.require_instance("startup", "enabled/base")
     assert root.context.config_base_dir == config_dir.resolve()
-    assert child.context.config_base_dir == (
-        modules / "a-root" / "compositions" / "root"
-    ).resolve()
+    assert child.context.config_base_dir == (modules / "a-root" / "compositions" / "root").resolve()
 
     with TestClient(app):
         pass

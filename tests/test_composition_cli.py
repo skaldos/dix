@@ -51,9 +51,7 @@ export = ["echo"]
         return self.base.echo(value)
 """,
     )
-    (tmp_path / "dix.toml").write_text(
-        '[composition]\ntrusted_module_roots = ["modules"]\n'
-    )
+    (tmp_path / "dix.toml").write_text('[composition]\ntrusted_module_roots = ["modules"]\n')
     return module
 
 
@@ -142,7 +140,8 @@ def test_module_inspect_is_static_and_requires_explicit_id(
     assert main(["module", "inspect", str(module), "--id", "external/demo", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["id"] == "external/demo"
-    assert payload["definitions"][0]["id"] == "external/demo/item"
+    assert payload["composition_definitions"][0]["id"] == "external/demo/item"
+    assert payload["application_definitions"] == []
     assert marker.exists() is False
 
 
@@ -231,24 +230,25 @@ def test_export_all_expands_authoritative_dependency_functions(
     (target / "compositions").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
-    assert main(
-        [
-            "composition",
-            "new",
-            "--module",
-            str(target),
-            "--id",
-            "consumer",
-            "--composition",
-            "base=acme/demo/base",
-            "--export-all",
-            "base",
-        ]
-    ) == 0
-    capsys.readouterr()
-    payload = tomllib.loads(
-        (target / "compositions" / "consumer" / "composition.toml").read_text()
+    assert (
+        main(
+            [
+                "composition",
+                "new",
+                "--module",
+                str(target),
+                "--id",
+                "consumer",
+                "--composition",
+                "base=acme/demo/base",
+                "--export-all",
+                "base",
+            ]
+        )
+        == 0
     )
+    capsys.readouterr()
+    payload = tomllib.loads((target / "compositions" / "consumer" / "composition.toml").read_text())
     assert payload["compositions"]["base"]["export"] == ["echo"]
 
 
@@ -312,12 +312,8 @@ export = ["echo"]
     )
     unrelated = module / "compositions" / "unfinished"
     unrelated.mkdir()
-    (unrelated / "composition.toml").write_text(
-        '[composition]\nid = "unfinished"\n'
-    )
-    (tmp_path / "dix.toml").write_text(
-        '[composition]\ntrusted_module_roots = ["modules"]\n'
-    )
+    (unrelated / "composition.toml").write_text('[composition]\nid = "unfinished"\n')
+    (tmp_path / "dix.toml").write_text('[composition]\ntrusted_module_roots = ["modules"]\n')
     monkeypatch.chdir(tmp_path)
 
     assert main(["composition", "generate", str(child_spec)]) == 0
@@ -355,9 +351,7 @@ use = "acme/demo/base"
 export = ["echo"]
 """
     )
-    (tmp_path / "dix.toml").write_text(
-        '[composition]\ntrusted_module_roots = ["one", "two"]\n'
-    )
+    (tmp_path / "dix.toml").write_text('[composition]\ntrusted_module_roots = ["one", "two"]\n')
     monkeypatch.chdir(tmp_path)
 
     assert main(["composition", "generate", str(spec)]) == 2
@@ -399,9 +393,7 @@ use = "acme/demo/base"
 export = ["echo"]
 """
     )
-    (tmp_path / "dix.toml").write_text(
-        '[composition]\ntrusted_module_roots = ["modules"]\n'
-    )
+    (tmp_path / "dix.toml").write_text('[composition]\ntrusted_module_roots = ["modules"]\n')
     monkeypatch.chdir(tmp_path)
 
     assert main(["composition", "generate", str(spec)]) == 2
@@ -440,9 +432,7 @@ use = "acme/demo/base"
 export = ["echo"]
 """
     )
-    (tmp_path / "dix.toml").write_text(
-        '[composition]\ntrusted_module_roots = ["modules"]\n'
-    )
+    (tmp_path / "dix.toml").write_text('[composition]\ntrusted_module_roots = ["modules"]\n')
     monkeypatch.chdir(tmp_path)
 
     assert main(["composition", "generate", str(spec)]) == 2

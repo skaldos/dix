@@ -63,6 +63,7 @@ def create_app(config: dict[str, Any] | EffectiveConfig | None = None) -> FastAP
     )
     app.state.capability_components = capability_components
     app.state.composition_component = composition_assembly.compositions
+    app.state.module_component = composition_assembly.modules
     app.state.composition_assembly = composition_assembly
     app.state.functional_store = functional_store
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from dix.core.module.models import ModuleDescriptor, ModuleInspection
+    from dix.core.module.models import ModuleDescriptor
 
     from .runtime import CompositionApi
 
@@ -73,15 +74,7 @@ class LoadedCompositionDefinition:
     definition: CompositionDefinition
     runtime_type: type[object]
     runtime_module_name: str
-
-
-@dataclass(frozen=True)
-class LoadedModule:
-    inspection: ModuleInspection
-    compositions: Mapping[str, LoadedCompositionDefinition]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "compositions", MappingProxyType(dict(self.compositions)))
+    module: ModuleDescriptor
 
 
 @dataclass(frozen=True)
@@ -155,6 +148,6 @@ class CompositionInstance:
     root_instance_id: str
     parent_instance_id: str | None
     runtime: object
-    api: "CompositionApi"
+    api: CompositionApi
     context: CompositionRuntimeContext
     state: Literal["created", "initialized", "cleaned"] = "created"

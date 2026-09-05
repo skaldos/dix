@@ -5,11 +5,13 @@ from dataclasses import dataclass
 import pytest
 
 from dix.core import (
+    ApplicationComponent,
     ComponentProvider,
     ComponentRegistry,
     ComponentRegistryError,
     DatamodelComponent,
     ElementComponent,
+    ModuleComponent,
     create_core_component_registry,
 )
 
@@ -119,6 +121,24 @@ def test_direct_core_require_uses_one_stable_root_scope() -> None:
 
     assert registry.require("datamodel", DatamodelComponent) is first
     assert first.element is registry.require("element", ElementComponent)
+
+
+def test_runtime_control_components_are_shared_and_registered_explicitly() -> None:
+    registry = create_core_component_registry()
+
+    assert registry.ids() == (
+        "application",
+        "composition",
+        "datamodel",
+        "element",
+        "module",
+    )
+    first = registry.create_scope("first")
+    second = registry.create_scope("second")
+    assert first.require("application", ApplicationComponent) is second.require(
+        "application", ApplicationComponent
+    )
+    assert first.require("module", ModuleComponent) is second.require("module", ModuleComponent)
 
 
 def test_component_provider_cycle_reports_the_complete_path() -> None:

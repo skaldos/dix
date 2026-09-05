@@ -19,7 +19,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     path = Path(args.path) if getattr(args, "path", None) else Path.cwd() / "dix.toml"
     if args.config_cmd == "init":
         created = write_default_config(path)
-        print(f"created: {str(path)}" if created else f"exists: {str(path)}")
+        print(f"created: {path!s}" if created else f"exists: {path!s}")
         return 0
 
     cfg = load_effective_config()
@@ -40,7 +40,9 @@ def cmd_config(args: argparse.Namespace) -> int:
         return 0
     if args.config_cmd == "explain":
         src = cfg.explain(args.key)
-        _json_print({"key": src.key, "value": src.value, "source": src.source, "detail": src.detail})
+        _json_print(
+            {"key": src.key, "value": src.value, "source": src.source, "detail": src.detail}
+        )
         return 0
     if args.config_cmd == "edit":
         editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
@@ -75,7 +77,9 @@ def cmd_interface(args: argparse.Namespace) -> int:
             if not directory.exists():
                 continue
             for path in sorted(directory.glob("*.toml")):
-                rows.append({"id": path.stem, "title": _read_interface_title(path), "path": str(path)})
+                rows.append(
+                    {"id": path.stem, "title": _read_interface_title(path), "path": str(path)}
+                )
         _json_print(rows)
         return 0
 
@@ -86,17 +90,17 @@ def cmd_interface(args: argparse.Namespace) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             f"[interface]\n"
-            f"id = \"{args.id}\"\n"
-            f"title = \"{args.id.replace('_', ' ').title()}\"\n"
-            f"access = {{ mode = \"public\" }}\n\n"
+            f'id = "{args.id}"\n'
+            f'title = "{args.id.replace("_", " ").title()}"\n'
+            f'access = {{ mode = "public" }}\n\n'
             f"[[components]]\n"
-            f"id = \"title\"\n"
-            f"use = \"input\"\n"
-            f"config = {{ label = \"Title\", placeholder = \"Enter a title\" }}\n\n"
+            f'id = "title"\n'
+            f'use = "input"\n'
+            f'config = {{ label = "Title", placeholder = "Enter a title" }}\n\n'
             f"[[components]]\n"
-            f"id = \"kind\"\n"
-            f"use = \"select\"\n"
-            f"config = {{ label = \"Kind\", mode = \"single\", options = [{{ id = \"demo\", label = \"Demo\" }}] }}\n"
+            f'id = "kind"\n'
+            f'use = "select"\n'
+            f'config = {{ label = "Kind", mode = "single", options = [{{ id = "demo", label = "Demo" }}] }}\n'
         )
         print(f"created: {path}")
         return 0
@@ -140,6 +144,13 @@ def _composition_runtime():
     return assemble_compositions(effective.composition).compositions
 
 
+def _module_runtime():
+    from .assembly import assemble_compositions
+
+    effective = load_effective_config()
+    return assemble_compositions(effective.composition)
+
+
 def _module_payload(descriptor) -> dict[str, Any]:
     return {
         "id": descriptor.id,
@@ -147,6 +158,7 @@ def _module_payload(descriptor) -> dict[str, Any]:
         "artifact_digest": descriptor.artifact_digest,
         "loaded": descriptor.loaded,
         "composition_ids": list(descriptor.composition_ids),
+        "application_ids": list(descriptor.application_ids),
     }
 
 
@@ -209,7 +221,9 @@ def _emit_rows(rows: list[dict[str, Any]], *, json_output: bool, empty: str) -> 
     for row in rows:
         identity = row.get("id", "")
         details = ", ".join(
-            f"{key}={value}" for key, value in row.items() if key != "id" and value not in (None, "", [])
+            f"{key}={value}"
+            for key, value in row.items()
+            if key != "id" and value not in (None, "", [])
         )
         print(f"{identity}: {details}" if details else str(identity))
 
@@ -222,18 +236,27 @@ def cmd_module(args: argparse.Namespace) -> int:
         print(f"created: {target}")
         return 0
     if args.module_cmd == "inspect":
-        from .core import CompositionComponent, create_core_component_registry
+        from .core import ModuleComponent, create_core_component_registry
 
         registry = create_core_component_registry()
-        component = registry.require("composition", CompositionComponent)
+        component = registry.require("module", ModuleComponent)
         inspection = component.inspect_module(Path(args.path), module_id=args.id)
         payload = {
             "id": inspection.id,
             "root": str(inspection.root),
             "artifact_digest": inspection.artifact_digest,
-            "definitions": [
-                _definition_payload(item)
-                for item in inspection.composition_definitions
+            "composition_definitions": [
+                _definition_payload(item) for item in inspection.composition_definitions
+            ],
+            "application_definitions": [
+                {
+                    "id": item.id,
+                    "local_id": item.local_id,
+                    "module_id": item.module_id,
+                    "spec_path": str(item.spec_path),
+                    "runtime_path": str(item.runtime_path),
+                }
+                for item in inspection.application_definitions
             ],
         }
         if args.json:
@@ -242,16 +265,19 @@ def cmd_module(args: argparse.Namespace) -> int:
             _emit_rows([payload], json_output=False, empty="no module")
         return 0
 
-    compositions = _composition_runtime()
+    assembly = _module_runtime()
+    modules = assembly.modules
+    compositions = assembly.compositions
+    from .core import ApplicationComponent
+
+    applications = assembly.components.require("application", ApplicationComponent)
     if args.module_cmd == "list":
-        rows = [_module_payload(item) for item in compositions.module_descriptors()]
+        rows = [_module_payload(item) for item in modules.module_descriptors()]
         _emit_rows(rows, json_output=args.json, empty="no loaded modules")
         return 0
     if args.module_cmd == "show":
-        compositions.require_module(args.id)
-        descriptor = next(
-            item for item in compositions.module_descriptors() if item.id == args.id
-        )
+        modules.require_module(args.id)
+        descriptor = next(item for item in modules.module_descriptors() if item.id == args.id)
         payload = _module_payload(descriptor)
         if args.json:
             _json_print(payload)
@@ -259,14 +285,19 @@ def cmd_module(args: argparse.Namespace) -> int:
             _emit_rows([payload], json_output=False, empty="module not found")
         return 0
     if args.module_cmd == "graph":
-        module = compositions.require_module(args.id)
+        module = modules.require_module(args.id)
         graphs = [
             compositions.describe_dependency_graph(composition_id)
             for composition_id in sorted(module.compositions)
         ]
+        application_graphs = [
+            applications.describe_dependency_graph(application_id)
+            for application_id in sorted(module.applications)
+        ]
         payload = {
             "module_id": args.id,
-            "compositions": list(sorted(module.compositions)),
+            "compositions": sorted(module.compositions),
+            "applications": sorted(module.applications),
             "graphs": [
                 {
                     "root": graph.root,
@@ -283,6 +314,22 @@ def cmd_module(args: argparse.Namespace) -> int:
                 }
                 for graph in graphs
             ],
+            "application_graphs": [
+                {
+                    "root": graph.root,
+                    "nodes": list(graph.nodes),
+                    "edges": [
+                        {
+                            "source": edge.source,
+                            "alias": edge.alias,
+                            "target": edge.target,
+                            "kind": edge.kind,
+                        }
+                        for edge in graph.edges
+                    ],
+                }
+                for graph in application_graphs
+            ],
         }
         if args.json:
             _json_print(payload)
@@ -291,9 +338,7 @@ def cmd_module(args: argparse.Namespace) -> int:
             for graph in payload["graphs"]:
                 print(f"  {graph['root']}")
                 for edge in graph["edges"]:
-                    print(
-                        f"    {edge['kind']} {edge['alias']} -> {edge['target']}"
-                    )
+                    print(f"    {edge['kind']} {edge['alias']} -> {edge['target']}")
         return 0
     raise SystemExit(f"unknown module command: {args.module_cmd}")
 
@@ -306,9 +351,7 @@ def cmd_composition(args: argparse.Namespace) -> int:
         from .compositions.resolver import TrustedBuildFunctionResolver
 
         effective = load_effective_config()
-        with TrustedBuildFunctionResolver(
-            effective.composition.trusted_module_roots
-        ) as resolver:
+        with TrustedBuildFunctionResolver(effective.composition.trusted_module_roots) as resolver:
             path = generate_runtime(
                 Path(args.path),
                 resolver,
@@ -335,9 +378,7 @@ def cmd_composition(args: argparse.Namespace) -> int:
                     raise ValueError(f"export-all uses unknown composition alias: {alias}")
                 exports.extend(
                     f"{alias}.{descriptor.id}"
-                    for descriptor in runtime.describe_composition(
-                        dependencies[alias]
-                    ).functions
+                    for descriptor in runtime.describe_composition(dependencies[alias]).functions
                 )
         path = create_composition_scaffold(
             Path(args.module),
@@ -373,10 +414,7 @@ def cmd_composition(args: argparse.Namespace) -> int:
             print(f"source: {descriptor.definition.spec_path}")
         return 0
     if args.composition_cmd == "functions":
-        rows = [
-            _function_payload(item)
-            for item in runtime.describe_composition(args.id).functions
-        ]
+        rows = [_function_payload(item) for item in runtime.describe_composition(args.id).functions]
         _emit_rows(rows, json_output=args.json, empty="no declared functions")
         return 0
     if args.composition_cmd == "instance" and args.instance_cmd == "list":
@@ -497,11 +535,14 @@ def main(argv: list[str] | None = None) -> int:
         from .assembly import CompositionAssemblyError
         from .compositions.errors import CompositionGeneratorError
         from .compositions.scaffold import CompositionScaffoldError
+        from .core.application import ApplicationComponentError, ApplicationRuntimeError
         from .core.composition import (
             CompositionComponentError,
             CompositionRuntimeError,
             CompositionSpecError,
         )
+        from .core.module import ModuleSpecError
+        from .core.module.component import ModuleComponentError
 
         if not isinstance(
             e,
@@ -512,6 +553,10 @@ def main(argv: list[str] | None = None) -> int:
                 CompositionScaffoldError,
                 CompositionGeneratorError,
                 CompositionSpecError,
+                ApplicationComponentError,
+                ApplicationRuntimeError,
+                ModuleComponentError,
+                ModuleSpecError,
             ),
         ):
             raise

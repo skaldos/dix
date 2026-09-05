@@ -4,12 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from dix.core import DatamodelComponent, CompositionComponent, create_core_component_registry
+from dix.core import (
+    CompositionComponent,
+    DatamodelComponent,
+    ModuleComponent,
+    create_core_component_registry,
+)
 from dix.core.composition import (
     CompositionComponentError,
     CompositionInstanceSpec,
     CompositionLifecycleError,
 )
+from dix.core.module.component import ModuleComponentError
 
 
 def write_composition(module: Path, local_id: str, body: str, runtime: str) -> Path:
@@ -20,9 +26,12 @@ def write_composition(module: Path, local_id: str, body: str, runtime: str) -> P
     return root
 
 
-def runtime_component() -> CompositionComponent:
+def runtime_components() -> tuple[ModuleComponent, CompositionComponent]:
     registry = create_core_component_registry()
-    return registry.require("composition", CompositionComponent)
+    return (
+        registry.require("module", ModuleComponent),
+        registry.require("composition", CompositionComponent),
+    )
 
 
 def write_base_and_child(module: Path) -> None:
@@ -89,6 +98,7 @@ description = "Return local state."
 
 
 def create_child(
+    modules: ModuleComponent,
     compositions: CompositionComponent,
     module: Path,
     *,
@@ -96,7 +106,7 @@ def create_child(
     owner: str = "test",
     config_base_dir: Path,
 ):
-    compositions.load_module(module, module_id="test/runtime")
+    modules.load_module(module, module_id="test/runtime")
     return compositions.create_instance(
         CompositionInstanceSpec(
             id=instance_id,
@@ -111,9 +121,9 @@ def create_child(
 def test_parent_child_component_graph_and_declared_api(tmp_path: Path) -> None:
     module = tmp_path / "module"
     write_base_and_child(module)
-    compositions = runtime_component()
+    modules, compositions = runtime_components()
 
-    root = create_child(compositions, module, config_base_dir=tmp_path / "config")
+    root = create_child(modules, compositions, module, config_base_dir=tmp_path / "config")
     child = compositions.require_instance("test", "request/base")
 
     assert root.api.echo("hello", loud=True) == "HELLO"
@@ -136,8 +146,8 @@ def test_parent_child_component_graph_and_declared_api(tmp_path: Path) -> None:
 def test_function_descriptors_use_local_signature_and_wrapper_origin(tmp_path: Path) -> None:
     module = tmp_path / "module"
     write_base_and_child(module)
-    compositions = runtime_component()
-    create_child(compositions, module, config_base_dir=tmp_path)
+    modules, compositions = runtime_components()
+    create_child(modules, compositions, module, config_base_dir=tmp_path)
 
     descriptor = compositions.describe_function("test/runtime/child", "echo")
     alias = compositions.describe_function("test/runtime/child", "echo_alias")
@@ -151,7 +161,9 @@ def test_function_descriptors_use_local_signature_and_wrapper_origin(tmp_path: P
     assert str(alias.signature) == "(value: str) -> str"
     assert local.source == "local"
     assert local.origin is None
-    assert [item.id for item in compositions.describe_composition("test/runtime/child").functions] == [
+    assert [
+        item.id for item in compositions.describe_composition("test/runtime/child").functions
+    ] == [
         "echo",
         "echo_alias",
         "local_value",
@@ -161,8 +173,8 @@ def test_function_descriptors_use_local_signature_and_wrapper_origin(tmp_path: P
 def test_two_root_graphs_are_fully_isolated(tmp_path: Path) -> None:
     module = tmp_path / "module"
     write_base_and_child(module)
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
+    modules, compositions = runtime_components()
+    modules.load_module(module, module_id="test/runtime")
 
     first = compositions.create_instance(
         CompositionInstanceSpec("first", "test/runtime/child", {}, tmp_path),
@@ -200,8 +212,8 @@ use = "test/runtime/base"
         self.second = second
 """,
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
+    modules, compositions = runtime_components()
+    modules.load_module(module, module_id="test/runtime")
 
     compositions.create_instance(
         CompositionInstanceSpec("double", "test/runtime/double", {}, tmp_path),
@@ -231,8 +243,8 @@ second = "datamodel"
         self.second = second
 """,
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
+    modules, compositions = runtime_components()
+    modules.load_module(module, module_id="test/runtime")
     root = compositions.create_instance(
         CompositionInstanceSpec("aliases", "test/runtime/aliases", {}, tmp_path),
         owner_scope_id="owner",
@@ -259,8 +271,8 @@ second = "element"
         self.second = second
 """,
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
+    modules, compositions = runtime_components()
+    modules.load_module(module, module_id="test/runtime")
 
     root = compositions.create_instance(
         CompositionInstanceSpec("ordered", "test/runtime/ordered", {}, tmp_path),
@@ -300,14 +312,9 @@ use = "test/runtime/first"
 """,
         runtime,
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
-
-    with pytest.raises(CompositionComponentError, match="dependency cycle"):
-        compositions.create_instance(
-            CompositionInstanceSpec("cycle", "test/runtime/first", {}, tmp_path),
-            owner_scope_id="owner",
-        )
+    with pytest.raises(ModuleComponentError, match="dependency cycle"):
+        modules, compositions = runtime_components()
+        modules.load_module(module, module_id="test/runtime")
 
     assert marker.exists() is False
     assert compositions.instances() == ()
@@ -339,14 +346,9 @@ export = ["missing"]
             "    def missing(self): return self.base.missing()\n"
         ),
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
-
-    with pytest.raises(CompositionComponentError, match="undeclared function"):
-        compositions.create_instance(
-            CompositionInstanceSpec("broken", "test/runtime/child", {}, tmp_path),
-            owner_scope_id="owner",
-        )
+    with pytest.raises(ModuleComponentError, match="undeclared function"):
+        modules, compositions = runtime_components()
+        modules.load_module(module, module_id="test/runtime")
 
     assert marker.exists() is False
     assert compositions.instances() == ()
@@ -366,13 +368,9 @@ missing = "unknown"
 """,
         "class Runtime:\n    def __init__(self, *, context, config, missing): pass\n",
     )
-    compositions = runtime_component()
-    compositions.load_module(component_module, module_id="test/component")
-    with pytest.raises(CompositionComponentError, match="component provider not found"):
-        compositions.create_instance(
-            CompositionInstanceSpec("component", "test/component/broken", {}, tmp_path),
-            owner_scope_id="owner",
-        )
+    with pytest.raises(ModuleComponentError, match="component provider not found"):
+        modules, compositions = runtime_components()
+        modules.load_module(component_module, module_id="test/component")
 
     dependency_module = tmp_path / "dependency"
     write_composition(
@@ -385,12 +383,8 @@ use = "test/absent/item"
 """,
         "class Runtime:\n    def __init__(self, *, context, config, missing): pass\n",
     )
-    compositions.load_module(dependency_module, module_id="test/dependency")
-    with pytest.raises(CompositionComponentError, match="definition is not loaded"):
-        compositions.create_instance(
-            CompositionInstanceSpec("dependency", "test/dependency/broken", {}, tmp_path),
-            owner_scope_id="owner",
-        )
+    with pytest.raises(ModuleComponentError, match="definition is not loaded"):
+        modules.load_module(dependency_module, module_id="test/dependency")
 
     assert compositions.instances() == ()
 
@@ -420,14 +414,9 @@ id = "broken"
 description = "Work."
 """
     write_composition(module, "broken", body, runtime)
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/runtime")
-
-    with pytest.raises(CompositionComponentError, match=message):
-        compositions.create_instance(
-            CompositionInstanceSpec("broken", "test/runtime/broken", {}, tmp_path),
-            owner_scope_id="owner",
-        )
+    with pytest.raises(ModuleComponentError, match=message):
+        modules, compositions = runtime_components()
+        modules.load_module(module, module_id="test/runtime")
 
     assert compositions.instances() == ()
 
@@ -435,8 +424,8 @@ description = "Work."
 def test_destroy_removes_complete_inactive_graph(tmp_path: Path) -> None:
     module = tmp_path / "module"
     write_base_and_child(module)
-    compositions = runtime_component()
-    create_child(compositions, module, config_base_dir=tmp_path)
+    modules, compositions = runtime_components()
+    create_child(modules, compositions, module, config_base_dir=tmp_path)
 
     compositions.destroy_instance("test", "request")
 
@@ -471,16 +460,16 @@ use = "test/base/base"
 """,
         "class Runtime:\n    def __init__(self, *, context, config, base): pass\n",
     )
-    compositions = runtime_component()
-    compositions.load_module(base_module, module_id="test/base")
-    compositions.load_module(root_module, module_id="test/root")
+    modules, compositions = runtime_components()
+    modules.load_module(base_module, module_id="test/base")
+    modules.load_module(root_module, module_id="test/root")
     compositions.create_instance(
         CompositionInstanceSpec("root", "test/root/root", {}, tmp_path),
         owner_scope_id="owner",
     )
 
     with pytest.raises(CompositionComponentError, match="required by loaded composition"):
-        compositions.unload_module("test/base")
+        modules.unload_module("test/base")
 
     assert len(compositions.instances()) == 2
 
@@ -532,11 +521,12 @@ use = "test/lifecycle/child"
 
 
 def lifecycle_instance(
+    modules: ModuleComponent,
     compositions: CompositionComponent,
     module: Path,
     tmp_path: Path,
 ):
-    compositions.load_module(module, module_id="test/lifecycle")
+    modules.load_module(module, module_id="test/lifecycle")
     return compositions.create_instance(
         CompositionInstanceSpec("root", "test/lifecycle/root", {}, tmp_path),
         owner_scope_id="owner",
@@ -547,8 +537,8 @@ def test_lifecycle_initializes_dependencies_first_and_cleans_in_reverse(tmp_path
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(module, log)
-    compositions = runtime_component()
-    root = lifecycle_instance(compositions, module, tmp_path)
+    modules, compositions = runtime_components()
+    root = lifecycle_instance(modules, compositions, module, tmp_path)
 
     compositions.initialize_instance("owner", "root")
     assert root.state == "initialized"
@@ -576,8 +566,8 @@ def test_init_failure_runs_reverse_cleanup_and_removes_graph(tmp_path: Path) -> 
         log,
         root_init="record('root.init'); raise RuntimeError('root boom')",
     )
-    compositions = runtime_component()
-    lifecycle_instance(compositions, module, tmp_path)
+    modules, compositions = runtime_components()
+    lifecycle_instance(modules, compositions, module, tmp_path)
 
     with pytest.raises(CompositionLifecycleError, match="root boom") as captured:
         compositions.initialize_instance("owner", "root")
@@ -596,8 +586,8 @@ def test_init_failure_exposes_cleanup_failures(tmp_path: Path) -> None:
         root_init="raise RuntimeError('init boom')",
         child_cleanup="raise RuntimeError('cleanup boom')",
     )
-    compositions = runtime_component()
-    lifecycle_instance(compositions, module, tmp_path)
+    modules, compositions = runtime_components()
+    lifecycle_instance(modules, compositions, module, tmp_path)
 
     with pytest.raises(CompositionLifecycleError) as captured:
         compositions.initialize_instance("owner", "root")
@@ -615,8 +605,8 @@ def test_cleanup_aggregates_failures_and_prevents_destroy(tmp_path: Path) -> Non
         root_cleanup="raise RuntimeError('root cleanup boom')",
         child_cleanup="raise RuntimeError('child cleanup boom')",
     )
-    compositions = runtime_component()
-    lifecycle_instance(compositions, module, tmp_path)
+    modules, compositions = runtime_components()
+    lifecycle_instance(modules, compositions, module, tmp_path)
     compositions.initialize_instance("owner", "root")
 
     with pytest.raises(CompositionLifecycleError) as captured:
@@ -635,14 +625,14 @@ def test_destroy_initialized_graph_cleans_it_and_unload_tears_down_owned_graph(
     module = tmp_path / "module"
     log = tmp_path / "events"
     write_lifecycle_graph(module, log)
-    compositions = runtime_component()
-    lifecycle_instance(compositions, module, tmp_path)
+    modules, compositions = runtime_components()
+    lifecycle_instance(modules, compositions, module, tmp_path)
     compositions.initialize_instance("owner", "root")
 
-    compositions.unload_module("test/lifecycle")
+    modules.unload_module("test/lifecycle")
 
     assert compositions.instances() == ()
-    assert compositions.modules() == ()
+    assert modules.modules() == ()
     assert log.read_text().splitlines()[-2:] == ["root.cleanup", "child.cleanup"]
 
 
@@ -654,8 +644,8 @@ def test_missing_lifecycle_hooks_are_valid_noops(tmp_path: Path) -> None:
         '[composition]\nid = "plain"\n',
         "class Runtime:\n    def __init__(self, *, context, config): pass\n",
     )
-    compositions = runtime_component()
-    compositions.load_module(module, module_id="test/plain")
+    modules, compositions = runtime_components()
+    modules.load_module(module, module_id="test/plain")
     root = compositions.create_instance(
         CompositionInstanceSpec("plain", "test/plain/plain", {}, tmp_path),
         owner_scope_id="owner",
