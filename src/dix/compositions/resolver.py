@@ -71,14 +71,21 @@ class TrustedBuildFunctionResolver:
         composition_id: str,
         function_id: str,
     ) -> CompositionFunctionDescriptor:
-        normalized_id = normalize_effective_composition_id(composition_id)
-        descriptors = self._describe_composition(normalized_id)
+        descriptors = self.describe_composition(composition_id)
         for descriptor in descriptors:
             if descriptor.id == function_id:
                 return descriptor
+        normalized_id = normalize_effective_composition_id(composition_id)
         raise CompositionGeneratorError(
             f"composition function is not declared: {normalized_id}.{function_id}"
         )
+
+    def describe_composition(
+        self,
+        composition_id: str,
+    ) -> tuple[CompositionFunctionDescriptor, ...]:
+        normalized_id = normalize_effective_composition_id(composition_id)
+        return self._describe_composition(normalized_id)
 
     def _describe_composition(
         self,

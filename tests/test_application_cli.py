@@ -249,8 +249,43 @@ def test_application_export_all_uses_live_composition_and_app_descriptors(
     assert payload["apps"]["worker"]["export"] == ["ping"]
 
 
+def test_application_generate_cli_uses_trusted_dependency_descriptors(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    module = configured_project(tmp_path)
+    target = module / "apps" / "generated"
+    target.mkdir()
+    spec = target / "app.toml"
+    spec.write_text(
+        """[app]
+id = "generated"
+[compositions.values]
+use = "acme/demo/base"
+export = ["echo"]
+[apps.worker]
+use = "acme/demo/base"
+export = ["ping"]
+"""
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["app", "generate", str(spec), "--lifecycle"]) == 0
+
+    assert "runtime.py" in capsys.readouterr().out
+    generated = (target / "runtime.py").read_text()
+    assert "def echo(self, value: str) -> str:" in generated
+    assert "def ping(self) -> str:" in generated
+    assert "def start(self) -> None:" in generated
+    assert "def stop(self) -> None:" in generated
+    original = generated
+
+    assert main(["app", "generate", str(spec)]) == 2
+    assert "already exists" in capsys.readouterr().err
+    assert (target / "runtime.py").read_text() == original
+
+
 def test_application_cli_has_no_execution_surface(capsys) -> None:
-    for command in ("list", "show", "functions", "graph", "new"):
+    for command in ("list", "show", "functions", "graph", "new", "generate"):
         try:
             main(["app", command, "--help"])
         except SystemExit as exc:

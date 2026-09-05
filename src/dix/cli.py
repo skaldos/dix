@@ -483,6 +483,21 @@ def cmd_composition(args: argparse.Namespace) -> int:
 def cmd_application(args: argparse.Namespace) -> int:
     from .applications.scaffold import create_application_scaffold
 
+    if args.application_cmd == "generate":
+        from .applications.generator import generate_runtime
+        from .applications.resolver import TrustedBuildApplicationResolver
+
+        effective = load_effective_config()
+        with TrustedBuildApplicationResolver(
+            effective.composition.trusted_module_roots
+        ) as resolver:
+            path = generate_runtime(
+                Path(args.path),
+                resolver,
+                include_lifecycle=args.lifecycle,
+            )
+        print(f"created: {path}")
+        return 0
     if args.application_cmd == "new":
         exports = list(args.export)
         if args.export_all:
@@ -679,6 +694,9 @@ def build_parser() -> argparse.ArgumentParser:
     application_new.add_argument("--export", action="append", default=[])
     application_new.add_argument("--export-all", action="append", default=[])
     application_new.add_argument("--function", action="append", default=[])
+    application_generate = application_sub.add_parser("generate")
+    application_generate.add_argument("path")
+    application_generate.add_argument("--lifecycle", action="store_true")
     application.set_defaults(func=cmd_application)
 
     serve = sub.add_parser("serve")
@@ -699,6 +717,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 2
     except Exception as e:
+        from .applications.errors import ApplicationGeneratorError
         from .applications.scaffold import ApplicationScaffoldError
         from .assembly import CompositionAssemblyError
         from .compositions.errors import CompositionGeneratorError
@@ -722,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
                 CompositionGeneratorError,
                 CompositionSpecError,
                 ApplicationScaffoldError,
+                ApplicationGeneratorError,
                 ApplicationComponentError,
                 ApplicationRuntimeError,
                 ModuleComponentError,
