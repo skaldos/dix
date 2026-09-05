@@ -67,7 +67,7 @@ class Runtime:
     ]
 
 
-def test_configured_startup_loads_dependencies_and_initializes_only_enabled_instances(
+def test_configured_startup_constructs_only_enabled_instances_without_function_calls(
     tmp_path: Path,
 ) -> None:
     modules = tmp_path / "modules"
@@ -135,7 +135,7 @@ startup = false
         "enabled",
         "enabled/base",
     ]
-    assert log.read_text().splitlines() == ["base.init", "root.init"]
+    assert not log.exists()
     root = compositions.require_instance("startup", "enabled")
     child = compositions.require_instance("startup", "enabled/base")
     assert root.context.config_base_dir == config_dir.resolve()
@@ -145,12 +145,7 @@ startup = false
         pass
 
     assert compositions.instances() == ()
-    assert log.read_text().splitlines() == [
-        "base.init",
-        "root.init",
-        "root.cleanup",
-        "base.cleanup",
-    ]
+    assert not log.exists()
     app.state.composition_assembly.shutdown()
 
 

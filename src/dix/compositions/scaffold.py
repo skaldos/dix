@@ -141,7 +141,7 @@ def _parse_export(value: str, compositions: dict[str, str]) -> ExportRequest:
 
 def _validate_python_id(value: str, label: str) -> str:
     normalized = value.strip()
-    if not normalized.isidentifier() or normalized in {"context", "config", "start", "stop"}:
+    if not normalized.isidentifier() or normalized in {"context", "config"}:
         raise CompositionScaffoldError(f"invalid {label}: {value!r}")
     return normalized
 

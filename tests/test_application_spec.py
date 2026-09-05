@@ -278,8 +278,8 @@ def test_application_contract_rejects_ambiguous_or_redundant_specs(
         inspect_spec(root / "app.toml", module_id="acme/bundle")
 
 
-@pytest.mark.parametrize("function_id", ["start", "stop"])
-def test_application_lifecycle_names_are_reserved(
+@pytest.mark.parametrize("function_id", ["init", "cleanup", "start", "stop"])
+def test_previous_lifecycle_names_are_valid_application_functions(
     tmp_path: Path,
     function_id: str,
 ) -> None:
@@ -289,12 +289,13 @@ def test_application_lifecycle_names_are_reserved(
         f'[app]\nid = "child"\n[functions.{function_id}]\n',
     )
 
-    with pytest.raises(ApplicationSpecError, match="invalid function id"):
-        inspect_spec(root / "app.toml", module_id="acme/bundle")
+    definition = inspect_spec(root / "app.toml", module_id="acme/bundle")
+
+    assert tuple(definition.functions) == (function_id,)
 
 
-@pytest.mark.parametrize("function_id", ["init", "cleanup"])
-def test_composition_lifecycle_names_are_reserved_after_replacement(
+@pytest.mark.parametrize("function_id", ["init", "cleanup", "start", "stop"])
+def test_previous_lifecycle_names_are_valid_composition_functions(
     tmp_path: Path,
     function_id: str,
 ) -> None:
@@ -304,5 +305,6 @@ def test_composition_lifecycle_names_are_reserved_after_replacement(
         f'[composition]\nid = "item"\n[functions.{function_id}]\n'
     )
 
-    with pytest.raises(ModuleSpecError, match="invalid function id"):
-        inspect_module(module, module_id="acme/bundle")
+    inspection = inspect_module(module, module_id="acme/bundle")
+
+    assert tuple(inspection.composition_definitions[0].functions) == (function_id,)

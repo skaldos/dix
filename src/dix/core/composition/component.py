@@ -38,15 +38,6 @@ class CompositionComponentError(Exception):
     """Raised when composition modules cannot be loaded or managed safely."""
 
 
-class CompositionLifecycleError(CompositionComponentError):
-    """Report a lifecycle failure together with any failed cleanup operations."""
-
-    def __init__(self, message: str, errors: tuple[BaseException, ...]) -> None:
-        self.errors = errors
-        details = "; ".join(f"{type(item).__name__}: {item}" for item in errors)
-        super().__init__(f"{message}: {details}")
-
-
 class CompositionComponent:
     """Authoritative registry for trusted composition module definitions."""
 
@@ -325,91 +316,16 @@ class CompositionComponent:
             raise CompositionComponentError(
                 f"composition root instance not found: {scope_id}/{instance_id}"
             ) from exc
-        if any(
-            self._instances[(scope_id, graph_instance_id)].state == "initialized"
-            for graph_instance_id in graph
-        ):
-            self.cleanup_instance(scope_id, instance_id)
         for graph_instance_id in reversed(graph):
             del self._instances[(scope_id, graph_instance_id)]
         del self._root_graphs[key]
 
     def _discard_instance_graph(self, scope_id: str, instance_id: str) -> None:
-        """Remove one graph without invoking lifecycle hooks during parent rollback."""
+        """Remove one graph during parent construction rollback."""
         graph = self._require_root_graph(scope_id, instance_id)
         for graph_instance_id in reversed(graph):
             del self._instances[(scope_id, graph_instance_id)]
         del self._root_graphs[(scope_id, instance_id)]
-
-    def _instance_graph_has_state(
-        self,
-        scope_id: str,
-        instance_id: str,
-        state: str,
-    ) -> bool:
-        graph = self._require_root_graph(scope_id, instance_id)
-        return any(
-            self._instances[(scope_id, graph_instance_id)].state == state
-            for graph_instance_id in graph
-        )
-
-    def initialize_instance(self, scope_id: str, instance_id: str) -> CompositionInstance:
-        graph = self._require_root_graph(scope_id, instance_id)
-        instances = [self._instances[(scope_id, item)] for item in graph]
-        if any(item.state != "created" for item in instances):
-            raise CompositionComponentError(
-                f"composition instance graph cannot be initialized from its current state: "
-                f"{scope_id}/{instance_id}"
-            )
-        initialized: list[CompositionInstance] = []
-        try:
-            for instance in instances:
-                self._call_lifecycle(instance, "init")
-                instance.state = "initialized"
-                initialized.append(instance)
-        except Exception as init_error:
-            cleanup_errors: list[BaseException] = []
-            for initialized_instance in reversed(initialized):
-                try:
-                    self._call_lifecycle(initialized_instance, "cleanup")
-                    initialized_instance.state = "cleaned"
-                except Exception as cleanup_error:
-                    cleanup_errors.append(cleanup_error)
-            for graph_instance_id in reversed(graph):
-                del self._instances[(scope_id, graph_instance_id)]
-            del self._root_graphs[(scope_id, instance_id)]
-            raise CompositionLifecycleError(
-                f"composition init failed for {scope_id}/{instance_id}",
-                (init_error, *cleanup_errors),
-            ) from init_error
-        return self.require_instance(scope_id, instance_id)
-
-    def cleanup_instance(self, scope_id: str, instance_id: str) -> CompositionInstance:
-        graph = self._require_root_graph(scope_id, instance_id)
-        instances = [self._instances[(scope_id, item)] for item in graph]
-        if any(item.state == "created" for item in instances):
-            raise CompositionComponentError(
-                f"composition instance graph has not been initialized: {scope_id}/{instance_id}"
-            )
-        if all(item.state == "cleaned" for item in instances):
-            raise CompositionComponentError(
-                f"composition instance graph is already cleaned: {scope_id}/{instance_id}"
-            )
-        errors: list[BaseException] = []
-        for instance in reversed(instances):
-            if instance.state != "initialized":
-                continue
-            try:
-                self._call_lifecycle(instance, "cleanup")
-                instance.state = "cleaned"
-            except Exception as exc:
-                errors.append(exc)
-        if errors:
-            raise CompositionLifecycleError(
-                f"composition cleanup failed for {scope_id}/{instance_id}",
-                tuple(errors),
-            )
-        return self.require_instance(scope_id, instance_id)
 
     def instances(self, *, scope_id: str | None = None) -> tuple[CompositionInstance, ...]:
         values = (
@@ -433,26 +349,11 @@ class CompositionComponent:
         except KeyError as exc:
             if (scope_id, instance_id) in self._instances:
                 raise CompositionComponentError(
-                    f"lifecycle operations require a root instance: {scope_id}/{instance_id}"
+                    f"operations require a root composition instance: {scope_id}/{instance_id}"
                 ) from exc
             raise CompositionComponentError(
                 f"composition root instance not found: {scope_id}/{instance_id}"
             ) from exc
-
-    @staticmethod
-    def _call_lifecycle(instance: CompositionInstance, method_name: str) -> None:
-        method = getattr(instance.runtime, method_name, None)
-        if method is None:
-            return
-        if not callable(method):
-            raise CompositionComponentError(
-                f"lifecycle attribute is not callable: {instance.definition_id}.{method_name}"
-            )
-        result = method()
-        if inspect.isawaitable(result):
-            raise CompositionComponentError(
-                f"async lifecycle hooks are not supported: {instance.definition_id}.{method_name}"
-            )
 
     def describe_composition(self, composition_id: str) -> CompositionDescriptor:
         loaded_definition = self._require_loaded_definition(composition_id)
@@ -610,12 +511,6 @@ class CompositionComponent:
                 raise CompositionComponentError(
                     f"composition '{definition.id}' must define runtime.py:Runtime"
                 )
-            for hook_name in ("init", "cleanup"):
-                hook = getattr(runtime_type, hook_name, None)
-                if inspect.iscoroutinefunction(hook):
-                    raise CompositionComponentError(
-                        f"async lifecycle hooks are not supported: {definition.id}.{hook_name}"
-                    )
         except Exception:
             CompositionComponent._remove_runtime_modules(module_name)
             raise

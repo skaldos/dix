@@ -400,7 +400,6 @@ def cmd_composition(args: argparse.Namespace) -> int:
             path = generate_runtime(
                 Path(args.path),
                 resolver,
-                include_lifecycle=args.lifecycle,
             )
         print(f"created: {path}")
         return 0
@@ -471,7 +470,6 @@ def cmd_composition(args: argparse.Namespace) -> int:
                 "parent_instance_id": item.parent_instance_id,
                 "definition_id": item.definition_id,
                 "module_id": item.module_id,
-                "state": item.state,
             }
             for item in runtime.instances()
         ]
@@ -494,7 +492,6 @@ def cmd_application(args: argparse.Namespace) -> int:
             path = generate_runtime(
                 Path(args.path),
                 resolver,
-                include_lifecycle=args.lifecycle,
             )
         print(f"created: {path}")
         return 0
@@ -670,7 +667,6 @@ def build_parser() -> argparse.ArgumentParser:
     composition_new.add_argument("--function", action="append", default=[])
     composition_generate = composition_sub.add_parser("generate")
     composition_generate.add_argument("path")
-    composition_generate.add_argument("--lifecycle", action="store_true")
     composition.set_defaults(func=cmd_composition)
 
     application = sub.add_parser("app")
@@ -696,7 +692,6 @@ def build_parser() -> argparse.ArgumentParser:
     application_new.add_argument("--function", action="append", default=[])
     application_generate = application_sub.add_parser("generate")
     application_generate.add_argument("path")
-    application_generate.add_argument("--lifecycle", action="store_true")
     application.set_defaults(func=cmd_application)
 
     serve = sub.add_parser("serve")

@@ -269,14 +269,14 @@ export = ["ping"]
     )
     monkeypatch.chdir(tmp_path)
 
-    assert main(["app", "generate", str(spec), "--lifecycle"]) == 0
+    assert main(["app", "generate", str(spec)]) == 0
 
     assert "runtime.py" in capsys.readouterr().out
     generated = (target / "runtime.py").read_text()
     assert "def echo(self, value: str) -> str:" in generated
     assert "def ping(self) -> str:" in generated
-    assert "def start(self) -> None:" in generated
-    assert "def stop(self) -> None:" in generated
+    assert "def start(self)" not in generated
+    assert "def stop(self)" not in generated
     original = generated
 
     assert main(["app", "generate", str(spec)]) == 2

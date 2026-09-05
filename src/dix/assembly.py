@@ -42,7 +42,7 @@ class CompositionAssembly:
 
 
 def assemble_compositions(settings: CompositionSettings) -> CompositionAssembly:
-    """Validate, load, and start the configured trusted composition graph."""
+    """Validate, load, and construct the configured trusted composition graph."""
     components = create_core_component_registry()
     modules = components.require("module", ModuleComponent)
     compositions = components.require("composition", CompositionComponent)
@@ -86,12 +86,10 @@ def assemble_compositions(settings: CompositionSettings) -> CompositionAssembly:
                     use=configured.use,
                     config=configured.config,
                     config_base_dir=configured.config_base_dir,
-                    startup=True,
                 ),
                 owner_scope_id="startup",
             )
             created.append(configured.id)
-            compositions.initialize_instance("startup", configured.id)
     except Exception as exc:
         cleanup_errors: list[Exception] = []
         for instance_id in reversed(created):

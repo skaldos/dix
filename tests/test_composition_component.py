@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
-from dix.core.composition import CompositionComponentError
+from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
 from dix.core.module.component import ModuleComponentError
 
 
@@ -116,7 +116,7 @@ def test_invalid_runtime_leaves_no_partial_registry_state(tmp_path: Path) -> Non
     assert compositions.definitions() == ()
 
 
-def test_load_does_not_execute_lifecycle_hooks(tmp_path: Path) -> None:
+def test_load_does_not_execute_undeclared_runtime_methods(tmp_path: Path) -> None:
     module = tmp_path / "bundle"
     marker = tmp_path / "started"
     write_composition(
@@ -136,27 +136,42 @@ def test_load_does_not_execute_lifecycle_hooks(tmp_path: Path) -> None:
     assert marker.exists() is False
 
 
-@pytest.mark.parametrize("hook", ["init", "cleanup"])
-def test_async_lifecycle_hook_is_rejected_during_load(
+@pytest.mark.parametrize("function_id", ["init", "cleanup", "start", "stop"])
+def test_previous_lifecycle_names_are_ordinary_declared_functions(
     tmp_path: Path,
-    hook: str,
+    function_id: str,
 ) -> None:
     module = tmp_path / "bundle"
+    marker = tmp_path / function_id
+    root = module / "compositions" / "item"
+    root.mkdir(parents=True)
+    (root / "composition.toml").write_text(
+        f'[composition]\nid = "item"\n[functions.{function_id}]\n'
+    )
     write_composition(
         module,
-        "item",
-        runtime=(
+        "other",
+        runtime="class Runtime:\n    def __init__(self, *, context, config): pass\n",
+    )
+    (root / "runtime.py").write_text(
             "class Runtime:\n"
             "    def __init__(self, *, context, config): pass\n"
-            f"    async def {hook}(self): pass\n"
-        ),
+            f"    def {function_id}(self):\n"
+            f"        from pathlib import Path\n"
+            f"        Path({str(marker)!r}).touch()\n"
+    )
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/bundle")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("item", "acme/bundle/item", {}, tmp_path),
+        owner_scope_id="test",
     )
 
-    with pytest.raises(
-        ModuleComponentError,
-        match=rf"async lifecycle hooks are not supported: acme/bundle/item\.{hook}",
-    ):
-        components()[0].load_module(module, module_id="acme/bundle")
+    assert not marker.exists()
+    instance.api.require(function_id)()
+    assert marker.exists()
+    assert not hasattr(compositions, "initialize_instance")
+    assert not hasattr(compositions, "cleanup_instance")
 
 
 def test_duplicate_module_does_not_replace_loaded_state(tmp_path: Path) -> None:

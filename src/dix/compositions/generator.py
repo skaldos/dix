@@ -19,8 +19,6 @@ from .resolver import CompositionFunctionResolver
 def generate_runtime(
     spec_path: Path,
     compositions: CompositionFunctionResolver,
-    *,
-    include_lifecycle: bool = False,
 ) -> Path:
     """Generate one new runtime.py from a source spec and live descriptors."""
     source = inspect_composition_source(spec_path)
@@ -28,7 +26,7 @@ def generate_runtime(
     if target.exists():
         raise CompositionGeneratorError(f"runtime already exists: {target}")
     descriptors = _dependency_descriptors(source, compositions)
-    payload = _render_runtime(source, descriptors, include_lifecycle=include_lifecycle)
+    payload = _render_runtime(source, descriptors)
     temporary_dir = Path(
         tempfile.mkdtemp(prefix=".runtime.", dir=source.composition_root)
     )
@@ -70,8 +68,6 @@ def _dependency_descriptors(
 def _render_runtime(
     source: CompositionSource,
     descriptors: dict[str, dict[str, CompositionFunctionDescriptor]],
-    *,
-    include_lifecycle: bool,
 ) -> str:
     protocol_names = _protocol_names(tuple(source.compositions))
     lines = [
@@ -130,17 +126,6 @@ def _render_runtime(
                 f"    def {function_id}(self) -> object:",
                 f"        {(function.description or f'TODO: Describe {function_id}.')!r}",
                 "        raise NotImplementedError",
-            )
-        )
-    if include_lifecycle:
-        lines.extend(
-            (
-                "",
-                "    def init(self) -> None:",
-                "        pass",
-                "",
-                "    def cleanup(self) -> None:",
-                "        pass",
             )
         )
     return "\n".join(lines) + "\n"

@@ -117,14 +117,14 @@ def test_generator_creates_protocol_constructor_wrappers_and_stub(tmp_path: Path
         root.api.local_value()
 
 
-def test_generator_adds_lifecycle_only_when_requested(tmp_path: Path) -> None:
+def test_generator_does_not_add_implicit_lifecycle(tmp_path: Path) -> None:
     _, compositions = component_with_base(tmp_path)
     spec = write_child_source(tmp_path)
 
-    source = generate_runtime(spec, compositions, include_lifecycle=True).read_text()
+    source = generate_runtime(spec, compositions).read_text()
 
-    assert "def init(self) -> None:" in source
-    assert "def cleanup(self) -> None:" in source
+    assert "def init(self)" not in source
+    assert "def cleanup(self)" not in source
 
 
 def test_generator_never_overwrites_runtime(tmp_path: Path) -> None:

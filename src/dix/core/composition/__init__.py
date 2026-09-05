@@ -15,11 +15,7 @@ from .models import (
     LoadedCompositionDefinition,
 )
 from .runtime import CompositionApi, CompositionRuntimeError
-from .component import (
-    CompositionComponent,
-    CompositionComponentError,
-    CompositionLifecycleError,
-)
+from .component import CompositionComponent, CompositionComponentError
 from dix.core.module import (
     ModuleDescriptor,
     ModuleInspection,
@@ -39,7 +35,6 @@ __all__ = [
     "CompositionApi",
     "CompositionComponent",
     "CompositionComponentError",
-    "CompositionLifecycleError",
     "CompositionDefinition",
     "CompositionDescriptor",
     "CompositionDependencyEdge",

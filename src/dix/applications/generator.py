@@ -30,8 +30,6 @@ class ApplicationDependencyResolver(Protocol):
 def generate_runtime(
     spec_path: Path,
     dependencies: ApplicationDependencyResolver,
-    *,
-    include_lifecycle: bool = False,
 ) -> Path:
     """Generate one new application runtime from live dependency descriptors."""
     source = inspect_application_source(spec_path)
@@ -39,7 +37,7 @@ def generate_runtime(
     if target.exists():
         raise ApplicationGeneratorError(f"runtime already exists: {target}")
     descriptors = _dependency_descriptors(source, dependencies)
-    payload = _render_runtime(source, descriptors, include_lifecycle=include_lifecycle)
+    payload = _render_runtime(source, descriptors)
     temporary_dir = Path(tempfile.mkdtemp(prefix=".runtime.", dir=source.application_root))
     temporary = temporary_dir / "runtime.py"
     try:
@@ -93,8 +91,6 @@ def _render_runtime(
     descriptors: dict[
         str, dict[str, CompositionFunctionDescriptor | ApplicationFunctionDescriptor]
     ],
-    *,
-    include_lifecycle: bool,
 ) -> str:
     protocol_names = _protocol_names(source)
     lines = [
@@ -153,17 +149,6 @@ def _render_runtime(
                 f"    def {function_id}(self) -> object:",
                 f"        {(function.description or f'TODO: Describe {function_id}.')!r}",
                 "        raise NotImplementedError",
-            )
-        )
-    if include_lifecycle:
-        lines.extend(
-            (
-                "",
-                "    def start(self) -> None:",
-                "        pass",
-                "",
-                "    def stop(self) -> None:",
-                "        pass",
             )
         )
     return "\n".join(lines) + "\n"

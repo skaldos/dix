@@ -124,12 +124,7 @@ def _parse_exports(values: tuple[str, ...], dependencies: dict[str, str]) -> dic
 
 def _validate_python_id(value: str, label: str) -> str:
     normalized = value.strip()
-    if not normalized.isidentifier() or normalized in {
-        "context",
-        "config",
-        "start",
-        "stop",
-    }:
+    if not normalized.isidentifier() or normalized in {"context", "config"}:
         raise ApplicationScaffoldError(f"invalid {label}: {value!r}")
     return normalized
 

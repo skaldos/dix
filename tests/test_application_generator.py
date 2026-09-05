@@ -147,14 +147,14 @@ def test_generator_creates_protocols_constructor_wrappers_and_stub(tmp_path: Pat
         root.api.local_value()
 
 
-def test_generator_adds_application_lifecycle_only_when_requested(tmp_path: Path) -> None:
+def test_generator_does_not_add_implicit_lifecycle(tmp_path: Path) -> None:
     write_dependencies(tmp_path)
     spec = write_target(tmp_path)
     with TrustedBuildApplicationResolver((tmp_path / "modules",)) as resolver:
-        source = generate_runtime(spec, resolver, include_lifecycle=True).read_text()
+        source = generate_runtime(spec, resolver).read_text()
 
-    assert "def start(self) -> None:" in source
-    assert "def stop(self) -> None:" in source
+    assert "def start(self)" not in source
+    assert "def stop(self)" not in source
 
 
 def test_generator_never_overwrites_runtime(tmp_path: Path) -> None:

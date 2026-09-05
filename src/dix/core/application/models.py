@@ -157,7 +157,5 @@ class ApplicationInstance:
     api: ApplicationApi
     context: ApplicationRuntimeContext
     compositions: Mapping[str, CompositionInstance]
-    state: Literal["created", "active", "stopped"] = "created"
-
     def __post_init__(self) -> None:
         self.compositions = MappingProxyType(dict(self.compositions))

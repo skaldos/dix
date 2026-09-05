@@ -1,10 +1,6 @@
 """Inspectable application definitions."""
 
-from .component import (
-    ApplicationComponent,
-    ApplicationComponentError,
-    ApplicationLifecycleError,
-)
+from .component import ApplicationComponent, ApplicationComponentError
 from .models import (
     ApplicationDefinition,
     ApplicationDependencyEdge,
@@ -41,7 +37,6 @@ __all__ = [
     "ApplicationFunctionSpec",
     "ApplicationInstance",
     "ApplicationInstanceSpec",
-    "ApplicationLifecycleError",
     "ApplicationRuntimeContext",
     "ApplicationRuntimeError",
     "ApplicationSource",

@@ -23,7 +23,6 @@ from .models import (
 CompositionSpecError = ModuleSpecError
 
 _RESERVED_ALIASES = {"context", "config"}
-_RESERVED_FUNCTIONS = {"init", "cleanup"}
 
 
 def inspect_spec(path: Path, *, module_id: str) -> CompositionDefinition:
@@ -212,7 +211,7 @@ def _validate_alias(alias: object, label: str) -> str:
 
 
 def _validate_function_id(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value.isidentifier() or value in _RESERVED_FUNCTIONS:
+    if not isinstance(value, str) or not value.isidentifier():
         raise CompositionSpecError(f"invalid {label}: {value!r}")
     return value
 

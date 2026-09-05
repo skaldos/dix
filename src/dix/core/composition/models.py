@@ -109,8 +109,6 @@ class CompositionInstanceSpec:
     use: str
     config: Mapping[str, Any]
     config_base_dir: Path
-    startup: bool = False
-
     def __post_init__(self) -> None:
         instance_id = self.id.strip()
         if not instance_id:
@@ -150,4 +148,3 @@ class CompositionInstance:
     runtime: object
     api: CompositionApi
     context: CompositionRuntimeContext
-    state: Literal["created", "initialized", "cleaned"] = "created"

@@ -82,9 +82,6 @@ class FunctionalRuntimeStore:
                     ),
                     owner_scope_id=owner_scope_id,
                 )
-                self._composition_component.initialize_instance(
-                    owner_scope_id, composition.id
-                )
                 bound[composition.id] = instance
             functions: dict[str, FunctionBinding] = {}
             for function in spec.functions:

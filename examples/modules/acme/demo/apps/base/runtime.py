@@ -27,19 +27,9 @@ class Runtime:
         self.config = config
         self.formatter = formatter
         self.source = source
-        self.started = False
-
-    def start(self) -> None:
-        self.formatter.format(self.source.read("startup"))
-        self.started = True
-
-    def stop(self) -> None:
-        self.started = False
 
     def render(self, value: str) -> str:
         """Read and format one value through both compositions."""
-        if not self.started:
-            raise RuntimeError("base application is not active")
         return self.formatter.format(self.source.read(value))
 
     def hidden(self) -> str:

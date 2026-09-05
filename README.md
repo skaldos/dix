@@ -31,7 +31,8 @@ PDF generation, a workflow engine, package management, remote plugin admission, 
 - **Application definition**: a static `app.toml` plus `runtime.py:Runtime`. It may depend only on
   compositions and applications, never directly on core components.
 - **Application instance**: one owner-scoped recursive graph with private child-application and
-  composition graphs. Creation, `start`/`stop`, rollback, and destruction are explicit Core operations.
+  composition graphs. Construction and structural destruction are explicit Core operations; behavior
+  runs only through declared functions.
 - **Application API**: the declared local function surface used by parent applications and direct Python
   consumers. It is not automatically exposed through HTTP, sockets, or CLI calls.
 - **Renderer**: a presentation adapter. The included HTML/Jinja/HTMX renderer is optional and consumes
@@ -59,7 +60,7 @@ examples/modules/dix/examples/files/
 
 examples/modules/acme/demo/
   compositions/{value_source,formatter}/...
-  apps/{base,child,lifecycle_only}/...
+  apps/{base,child}/...
 ```
 
 The files example's effective composition ID is `dix/examples/files/datamodel_files`.
@@ -191,7 +192,6 @@ instance = applications.create_instance(
     ),
     owner_scope_id="shell",
 )
-applications.start_instance("shell", "demo")
 assert instance.api.render("input") == "formatted<value:input>"
 applications.destroy_instance("shell", "demo")
 ```
@@ -205,9 +205,9 @@ composition-local datamodel instance. The interface exposes only the explicit, s
 adapter and reuses one stable root graph across repeated GET requests.
 
 `examples/modules/acme/demo` is a transport-free application pressure test. `child.render` is a real
-local wrapper around `base.render`, which calls both example compositions. The lifecycle-only app proves
-that an application needs no functions. The automated E2E test verifies lifecycle order, rollback,
-root-graph isolation, generator output, and complete teardown.
+local wrapper around `base.render`, which calls both example compositions. The automated E2E test
+verifies structural construction rollback, root-graph isolation, generator output, and complete
+teardown. Load, create, and destroy do not invoke declared functions implicitly.
 
 RPC, IPC, ROBA integration, process isolation, authentication, application startup management, and a
 remote application call surface are deliberately not implemented. They are possible future stacks over

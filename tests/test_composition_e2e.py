@@ -13,7 +13,7 @@ def write_composition(module: Path, local_id: str, body: str, runtime: str) -> N
     (root / "runtime.py").write_text(runtime)
 
 
-def test_multi_composition_bundle_isolated_graphs_api_and_lifecycle(tmp_path: Path) -> None:
+def test_multi_composition_bundle_isolated_graphs_and_api(tmp_path: Path) -> None:
     module = tmp_path / "modules" / "pressure" / "bundle"
     log = tmp_path / "events"
     helper = (
@@ -102,11 +102,10 @@ description = "Local."
         compositions.describe_function("pressure/bundle/child", "base_label").origin == "base.label"
     )
 
-    compositions.initialize_instance("pressure", "first")
-    compositions.cleanup_instance("pressure", "first")
-    assert log.read_text().splitlines() == [
-        "base.init",
-        "child.init",
-        "child.cleanup",
-        "base.cleanup",
+    assert not log.exists()
+    compositions.destroy_instance("pressure", "first")
+    assert not log.exists()
+    assert [item.id for item in compositions.instances(scope_id="pressure")] == [
+        "second",
+        "second/base",
     ]

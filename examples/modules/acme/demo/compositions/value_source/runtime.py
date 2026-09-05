@@ -14,16 +14,7 @@ class Runtime:
     ) -> None:
         self.context = context
         self.config = config
-        self.initialized = False
-
-    def init(self) -> None:
-        self.initialized = True
-
-    def cleanup(self) -> None:
-        self.initialized = False
 
     def read(self, value: str) -> str:
         """Return a deterministic namespaced value."""
-        if not self.initialized:
-            raise RuntimeError("value_source is not initialized")
         return f"value:{value}"

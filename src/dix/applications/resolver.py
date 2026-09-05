@@ -217,11 +217,6 @@ class TrustedBuildApplicationResolver:
                 raise ApplicationGeneratorError(
                     f"application '{definition.id}' must define runtime.py:Runtime"
                 )
-            for hook_name in ("start", "stop"):
-                if inspect.iscoroutinefunction(getattr(runtime_type, hook_name, None)):
-                    raise ApplicationGeneratorError(
-                        f"async lifecycle hooks are not supported: {definition.id}.{hook_name}"
-                    )
         except ApplicationGeneratorError:
             self._remove_runtime_modules(module_name)
             raise
