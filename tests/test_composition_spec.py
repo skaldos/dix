@@ -42,7 +42,7 @@ def test_inspect_module_reads_multiple_direct_compositions_without_importing(
     inspection = inspect_module(module, module_id="acme/bundle")
 
     assert inspection.id == "acme/bundle"
-    assert [item.id for item in inspection.definitions] == [
+    assert [item.id for item in inspection.composition_definitions] == [
         "acme/bundle/first",
         "acme/bundle/second",
     ]
@@ -98,7 +98,9 @@ def test_discovery_uses_relative_module_ids_and_stops_below_module_root(
     inspections = discover_modules([trusted])
 
     assert [item.id for item in inspections] == ["acme/outer", "other/bundle"]
-    assert [item.id for item in inspections[0].definitions] == ["acme/outer/base"]
+    assert [item.id for item in inspections[0].composition_definitions] == [
+        "acme/outer/base"
+    ]
 
 
 def test_nested_composition_directories_are_not_recursively_inspected(tmp_path: Path) -> None:
@@ -108,7 +110,7 @@ def test_nested_composition_directories_are_not_recursively_inspected(tmp_path: 
 
     inspection = inspect_module(module, module_id="acme/bundle")
 
-    assert [item.local_id for item in inspection.definitions] == ["direct"]
+    assert [item.local_id for item in inspection.composition_definitions] == ["direct"]
 
 
 def test_artifact_digest_changes_with_relevant_content_but_ignores_pyc(tmp_path: Path) -> None:
@@ -126,7 +128,7 @@ def test_empty_module_is_not_inspectable(tmp_path: Path) -> None:
     module = tmp_path / "empty"
     (module / "compositions").mkdir(parents=True)
 
-    with pytest.raises(CompositionSpecError, match="contains no compositions"):
+    with pytest.raises(CompositionSpecError, match="contains no definitions"):
         inspect_module(module, module_id="acme/empty")
 
 

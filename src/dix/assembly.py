@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from dix.config import CompositionSettings
 from dix.core import ComponentRegistry, CompositionComponent, create_core_component_registry
 from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
-from dix.core.composition.models import ModuleInspection
+from dix.core.module import ModuleInspection
 
 
 class CompositionAssemblyError(Exception):
@@ -47,7 +47,7 @@ def assemble_compositions(settings: CompositionSettings) -> CompositionAssembly:
     definitions = {
         definition.id: definition
         for inspection in inspections
-        for definition in inspection.definitions
+        for definition in inspection.composition_definitions
     }
 
     for instance in settings.instances:
@@ -136,7 +136,7 @@ def _module_load_order(inspections: tuple[ModuleInspection, ...]) -> tuple[Modul
     by_id = {item.id: item for item in inspections}
     dependencies: dict[str, set[str]] = {item.id: set() for item in inspections}
     for inspection in inspections:
-        for definition in inspection.definitions:
+        for definition in inspection.composition_definitions:
             for dependency in definition.compositions.values():
                 target_module = dependency.use.rsplit("/", 1)[0]
                 if target_module != inspection.id:

@@ -7,6 +7,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 if TYPE_CHECKING:
+    from dix.core.module.models import ModuleDescriptor, ModuleInspection
+
     from .runtime import CompositionApi
 
 
@@ -67,14 +69,6 @@ class CompositionDefinition:
 
 
 @dataclass(frozen=True)
-class ModuleInspection:
-    id: str
-    root: Path
-    artifact_digest: str
-    definitions: tuple[CompositionDefinition, ...]
-
-
-@dataclass(frozen=True)
 class LoadedCompositionDefinition:
     definition: CompositionDefinition
     runtime_type: type[object]
@@ -88,15 +82,6 @@ class LoadedModule:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "compositions", MappingProxyType(dict(self.compositions)))
-
-
-@dataclass(frozen=True)
-class ModuleDescriptor:
-    id: str
-    root: Path
-    artifact_digest: str
-    loaded: bool
-    composition_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)

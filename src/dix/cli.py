@@ -231,7 +231,10 @@ def cmd_module(args: argparse.Namespace) -> int:
             "id": inspection.id,
             "root": str(inspection.root),
             "artifact_digest": inspection.artifact_digest,
-            "definitions": [_definition_payload(item) for item in inspection.definitions],
+            "definitions": [
+                _definition_payload(item)
+                for item in inspection.composition_definitions
+            ],
         }
         if args.json:
             _json_print(payload)

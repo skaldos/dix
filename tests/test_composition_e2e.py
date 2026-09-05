@@ -73,7 +73,10 @@ description = "Local."
     compositions = registry.require("composition", CompositionComponent)
 
     inspection = compositions.inspect_module(module, module_id="pressure/bundle")
-    assert [item.local_id for item in inspection.definitions] == ["base", "child"]
+    assert [item.local_id for item in inspection.composition_definitions] == [
+        "base",
+        "child",
+    ]
     compositions.load_module(
         module,
         module_id="pressure/bundle",

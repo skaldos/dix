@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from dix.core.registry import ComponentRegistry
+from dix.core.module import ModuleDescriptor, ModuleInspection, discover_modules, inspect_module
 
 from .models import (
     CompositionDefinition,
@@ -21,8 +22,6 @@ from .models import (
     CompositionRuntimeContext,
     LoadedCompositionDefinition,
     LoadedModule,
-    ModuleDescriptor,
-    ModuleInspection,
 )
 from .runtime import (
     CompositionApi,
@@ -31,7 +30,7 @@ from .runtime import (
     describe_runtime_functions,
     validate_runtime_constructor,
 )
-from .spec import discover_modules, inspect_module, inspect_spec
+from .spec import inspect_spec
 
 
 class CompositionComponentError(Exception):
@@ -90,7 +89,7 @@ class CompositionComponent:
             raise CompositionComponentError(f"module already loaded: {inspection.id}")
         duplicates = sorted(
             definition.id
-            for definition in inspection.definitions
+            for definition in inspection.composition_definitions
             if definition.id in self._definitions
         )
         if duplicates:
@@ -101,7 +100,7 @@ class CompositionComponent:
         imported: list[str] = []
         staged: dict[str, LoadedCompositionDefinition] = {}
         try:
-            for definition in inspection.definitions:
+            for definition in inspection.composition_definitions:
                 runtime_type, module_name = self._import_runtime(
                     definition,
                     inspection.artifact_digest,
@@ -171,6 +170,7 @@ class CompositionComponent:
                 artifact_digest=loaded.inspection.artifact_digest,
                 loaded=True,
                 composition_ids=tuple(sorted(loaded.compositions)),
+                application_ids=(),
             )
             for loaded in self.modules()
         )
@@ -482,6 +482,7 @@ class CompositionComponent:
                 artifact_digest=module.inspection.artifact_digest,
                 loaded=True,
                 composition_ids=tuple(sorted(module.compositions)),
+                application_ids=(),
             ),
         )
 
