@@ -2,12 +2,13 @@
 
 Declarative Interface eXecutor.
 
-`dix` provides declarative interfaces over narrow core capabilities and trusted, in-process Python
-compositions. The current foundation proves two end-to-end paths:
+`dix` provides narrow core capabilities plus trusted, in-process Python compositions and
+applications. The current foundation proves three independent end-to-end paths:
 
 ```text
 UI element state/functions -> UI component -> interface -> API -> optional renderer
-trusted module root -> composition spec -> isolated runtime graph -> interface function -> API
+trusted module root -> composition spec -> isolated composition graph -> local function API
+component -> composition -> application -> child application -> local function API
 ```
 
 The project intentionally does **not** include business-specific provisioning logic, AD/LDAP/OIDC,
@@ -15,17 +16,24 @@ PDF generation, a workflow engine, package management, remote plugin admission, 
 
 ## Concepts
 
-- **Interface**: the only externally exposed declarative control surface. It explicitly binds selected
-  composition functions or renderer-oriented UI components.
+- **Declarative interface**: the existing HTTP/renderer-oriented control surface. It explicitly binds
+  selected composition functions or UI components; loading an application does not add such a surface.
 - **Core component**: a narrow internal capability. `element` handles atomic native Python values;
-  `datamodel` handles schemas; `composition` owns the authoritative module and runtime graph.
+  `datamodel` handles schemas; `composition`, `application`, and `module` own their respective runtime
+  registries and delivery transaction.
 - **Module**: a trusted delivery and dependency bundle below a configured root. Its relative path is its
-  current ID; there is no `module.toml`.
+  current ID. It may contain compositions, applications, or both; there is no `module.toml`.
 - **Composition definition**: a static `composition.toml` plus the fixed `runtime.py:Runtime` entrypoint.
 - **Composition instance**: one isolated runtime graph. Each node receives local composition-scoped
   components; runtime-scoped control components are explicitly shared.
 - **Composition API**: only functions declared by the spec and implemented as local runtime methods.
   Adopted dependency functions remain real local wrappers with inspectable origins and signatures.
+- **Application definition**: a static `app.toml` plus `runtime.py:Runtime`. It may depend only on
+  compositions and applications, never directly on core components.
+- **Application instance**: one owner-scoped recursive graph with private child-application and
+  composition graphs. Creation, `start`/`stop`, rollback, and destruction are explicit Core operations.
+- **Application API**: the declared local function surface used by parent applications and direct Python
+  consumers. It is not automatically exposed through HTTP, sockets, or CLI calls.
 - **Renderer**: a presentation adapter. The included HTML/Jinja/HTMX renderer is optional and consumes
   the same interface model under `/render`.
 
@@ -38,19 +46,23 @@ atomic, but arbitrary Python import side effects cannot be rolled back.
 <trusted-root>/
   <module-id>/
     compositions/
-      <local-composition-id>/
-        composition.toml
-        runtime.py
+      <local-composition-id>/{composition.toml,runtime.py}
+    apps/
+      <local-application-id>/{app.toml,runtime.py}
 ```
 
-The included example is:
+The included examples are:
 
 ```text
 examples/modules/dix/examples/files/
   compositions/datamodel_files/{composition.toml,runtime.py}
+
+examples/modules/acme/demo/
+  compositions/{value_source,formatter}/...
+  apps/{base,child,lifecycle_only}/...
 ```
 
-Its effective composition ID is `dix/examples/files/datamodel_files`.
+The files example's effective composition ID is `dix/examples/files/datamodel_files`.
 
 ## Configuration
 
@@ -87,6 +99,9 @@ uv run dix --help
 uv run dix module list --json
 uv run dix composition list --json
 uv run dix composition functions dix/examples/files/datamodel_files --json
+uv run dix app list --json
+uv run dix app show acme/demo/child --json
+uv run dix app graph acme/demo/child --json
 ```
 
 Start the demo server:
@@ -127,41 +142,58 @@ dix composition new \
 
 dix composition generate \
   ./modules/my/new_stuff/compositions/processor/composition.toml
+
+dix app list [--json]
+dix app show <application-id> [--json]
+dix app functions <application-id> [--json]
+dix app graph <application-id> [--json]
+
+dix app new \
+  --module ./modules/my/new_stuff \
+  --id child \
+  --composition formatter=acme/demo/formatter \
+  --app base=acme/demo/base \
+  --export base.render \
+  --function local_value
+
+dix app generate \
+  ./modules/my/new_stuff/apps/child/app.toml
 ```
 
-Scaffolding and generation never overwrite existing files. The generator obtains dependency signatures
-from the live runtime code of the explicitly referenced compositions below configured trusted roots;
-signatures are not copied into TOML specs. Build-time dependency resolution is composition-granular, so
-a runtime can be generated while its target module bundle is still incomplete. Normal runtime loading
-remains atomic at module level. Generation imports the referenced dependency runtimes and therefore
-executes trusted Python module code; configure trusted module roots accordingly.
+Scaffolding and generation never overwrite existing files. The generators obtain dependency signatures
+from live runtime code below configured trusted roots; signatures are not copied into TOML specs.
+Build-time dependency resolution is artifact-granular, so a runtime can be generated while its target
+module bundle is still incomplete. Normal runtime loading remains atomic across every composition and
+application in a module. Generation imports referenced dependency runtimes and therefore executes
+trusted Python module code; configure trusted module roots accordingly.
 
 ## Direct Python smoke
 
 ```python
 from pathlib import Path
-from dix.core import CompositionComponent, create_core_component_registry
-from dix.core.composition import CompositionInstanceSpec
+from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
+from dix.core.application import ApplicationInstanceSpec
 
 root = Path.cwd()
 registry = create_core_component_registry()
-compositions = registry.require("composition", CompositionComponent)
-compositions.load_module(
-    root / "examples/modules/dix/examples/files",
-    module_id="dix/examples/files",
+modules = registry.require("module", ModuleComponent)
+applications = registry.require("application", ApplicationComponent)
+modules.load_module(
+    root / "examples/modules/acme/demo",
+    module_id="acme/demo",
 )
-instance = compositions.create_instance(
-    CompositionInstanceSpec(
+instance = applications.create_instance(
+    ApplicationInstanceSpec(
         id="demo",
-        use="dix/examples/files/datamodel_files",
+        use="acme/demo/child",
         config={},
         config_base_dir=root,
     ),
     owner_scope_id="shell",
 )
-instance.api.register_model(root / "examples/models/demo_user.toml")
-result = instance.api.load_data((root / "examples/data/demo_user.json").read_text())
-assert result.values["age"] == 42
+applications.start_instance("shell", "demo")
+assert instance.api.render("input") == "formatted<value:input>"
+applications.destroy_instance("shell", "demo")
 ```
 
 ## Included demos
@@ -171,3 +203,12 @@ components. `examples/interfaces/demo_datamodel.toml` binds the trusted `datamod
 Its local integer wrapper turns the JSON string `"42"` into an integer without changing any other
 composition-local datamodel instance. The interface exposes only the explicit, side-effect-free `run`
 adapter and reuses one stable root graph across repeated GET requests.
+
+`examples/modules/acme/demo` is a transport-free application pressure test. `child.render` is a real
+local wrapper around `base.render`, which calls both example compositions. The lifecycle-only app proves
+that an application needs no functions. The automated E2E test verifies lifecycle order, rollback,
+root-graph isolation, generator output, and complete teardown.
+
+RPC, IPC, ROBA integration, process isolation, authentication, application startup management, and a
+remote application call surface are deliberately not implemented. They are possible future stacks over
+components, compositions, and applications—not implicit behavior of the current runtime.

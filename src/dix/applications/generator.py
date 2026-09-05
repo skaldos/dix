@@ -100,7 +100,7 @@ def _render_runtime(
     lines = [
         "from __future__ import annotations",
         "",
-        "from collections.abc import Mapping",
+        "from collections.abc import Callable, Mapping",
         "from typing import Protocol",
         "",
         "from dix.core.application import ApplicationRuntimeContext",
@@ -108,8 +108,9 @@ def _render_runtime(
     for alias in (*source.compositions, *source.applications):
         lines.extend(("", "", f"class {protocol_names[alias]}(Protocol):"))
         functions = descriptors[alias]
+        lines.append("    def require(self, function_id: str) -> Callable[..., object]: ...")
         if not functions:
-            lines.append("    pass")
+            continue
         for descriptor in functions.values():
             signature = _safe_method_signature(descriptor.signature)
             prefix = "async def" if descriptor.is_async else "def"
@@ -140,7 +141,7 @@ def _render_runtime(
         lines.extend(("", f"    {prefix} {local_id}{signature}:"))
         if descriptor.docstring:
             lines.append(f"        {descriptor.docstring!r}")
-        call = f"self.{alias}.{function_id}({_call_arguments(descriptor.signature)})"
+        call = f"self.{alias}.require({function_id!r})({_call_arguments(descriptor.signature)})"
         lines.append(f"        return {'await ' if descriptor.is_async else ''}{call}")
 
     for function_id, function in source.functions.items():

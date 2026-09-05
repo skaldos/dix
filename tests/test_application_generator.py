@@ -112,10 +112,12 @@ def test_generator_creates_protocols_constructor_wrappers_and_stub(tmp_path: Pat
     assert "values: ValuesCompositionApi" in source
     assert "worker: WorkerApplicationApi" in source
     assert "def complex_call(self, first: str, /, second: str = 'default', *values: int" in source
-    assert "self.values.complex_call(first, second, *values, flag=flag, **extra)" in source
+    assert (
+        "self.values.require('complex_call')(first, second, *values, flag=flag, **extra)" in source
+    )
     assert "def complex_alias(self, first: str, /" in source
     assert "async def async_call" in source
-    assert "return await self.worker.async_call(value, suffix=suffix)" in source
+    assert "return await self.worker.require('async_call')(value, suffix=suffix)" in source
     assert "async def async_alias" in source
     assert "def local_value(self) -> object:" in source
     assert "raise NotImplementedError" in source

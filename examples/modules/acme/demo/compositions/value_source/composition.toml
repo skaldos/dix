@@ -1,0 +1,5 @@
+[composition]
+id = "value_source"
+
+[functions.read]
+description = "Return a deterministic namespaced value."

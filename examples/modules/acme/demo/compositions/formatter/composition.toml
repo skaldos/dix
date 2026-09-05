@@ -1,0 +1,5 @@
+[composition]
+id = "formatter"
+
+[functions.format]
+description = "Wrap one value in a deterministic representation."

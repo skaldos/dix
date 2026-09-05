@@ -1,0 +1,11 @@
+[app]
+id = "base"
+
+[compositions.formatter]
+use = "acme/demo/formatter"
+
+[compositions.source]
+use = "acme/demo/value_source"
+
+[functions.render]
+description = "Read and format one value through both compositions."

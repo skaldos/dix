@@ -1,0 +1,9 @@
+[app]
+id = "child"
+
+[apps.base]
+use = "acme/demo/base"
+export = ["render"]
+
+[functions.describe]
+description = "Add child-local behavior to the recursive result."
