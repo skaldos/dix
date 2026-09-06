@@ -153,16 +153,40 @@ def test_invoke_help_env_precedence_named_options_and_exit_contract(
     assert "DIX_TEST_VALUE" in command_help.out
     assert "DIX_TEST_COUNT" in command_help.out
     assert "DIX_TEST_UPPER" in command_help.out
+    assert "TRUE|FALSE" in command_help.out
     assert calls == []
 
     assert instance.api.invoke(
         spec_path=spec,
         targets=targets,
-        argv=["text", "render", "--value", "hello", "--count", "2", "--upper"],
+        argv=["text", "render", "--value", "hello", "--count", "2"],
+    ) == 2
+    missing_boolean = capsys.readouterr()
+    assert missing_boolean.out == ""
+    assert "missing option '--upper'" in missing_boolean.err.lower()
+    assert "DIX_TEST_UPPER" in missing_boolean.err
+    assert "['DIX_TEST_UPPER']" not in missing_boolean.err
+    assert calls == []
+
+    assert instance.api.invoke(
+        spec_path=spec,
+        targets=targets,
+        argv=["text", "render", "--value", "hello", "--count", "2", "--upper", "true"],
     ) == 0
     direct = capsys.readouterr()
     assert direct.out == "HELLO\nHELLO\n"
     assert direct.err == ""
+    assert calls[-1] == {"value": "hello", "count": 2, "upper": True}
+
+    assert instance.api.invoke(
+        spec_path=spec,
+        targets=targets,
+        argv=["text", "render", "--value", "plain", "--count", "1", "--upper", "false"],
+    ) == 0
+    explicit_false = capsys.readouterr()
+    assert explicit_false.out == "plain\n"
+    assert explicit_false.err == ""
+    assert calls[-1] == {"value": "plain", "count": 1, "upper": False}
 
     monkeypatch.setenv("DIX_TEST_VALUE", "environment")
     monkeypatch.setenv("DIX_TEST_COUNT", "1")
@@ -180,7 +204,17 @@ def test_invoke_help_env_precedence_named_options_and_exit_contract(
     assert instance.api.invoke(
         spec_path=spec,
         targets=targets,
-        argv=["text", "render", "positional", "--count", "1", "--upper"],
+        argv=[
+            "text",
+            "render",
+            "positional",
+            "--value",
+            "hello",
+            "--count",
+            "1",
+            "--upper",
+            "true",
+        ],
     ) == 2
     positional = capsys.readouterr()
     assert positional.out == ""
@@ -190,11 +224,39 @@ def test_invoke_help_env_precedence_named_options_and_exit_contract(
     assert instance.api.invoke(
         spec_path=spec,
         targets=targets,
-        argv=["text", "render", "--value", "hello", "--count", "nope", "--upper"],
+        argv=[
+            "text",
+            "render",
+            "--value",
+            "hello",
+            "--count",
+            "nope",
+            "--upper",
+            "true",
+        ],
     ) == 2
     invalid = capsys.readouterr()
     assert invalid.out == ""
     assert "not a valid int" in invalid.err.lower()
+    assert len(calls) == call_count
+
+    assert instance.api.invoke(
+        spec_path=spec,
+        targets=targets,
+        argv=[
+            "text",
+            "render",
+            "--value",
+            "hello",
+            "--count",
+            "1",
+            "--upper",
+            "sometimes",
+        ],
+    ) == 2
+    invalid_boolean = capsys.readouterr()
+    assert invalid_boolean.out == ""
+    assert "invalid value for '--upper'" in invalid_boolean.err.lower()
     assert len(calls) == call_count
 
 
@@ -211,7 +273,7 @@ def test_none_target_and_target_failure_have_stable_output(
     assert instance.api.invoke(
         spec_path=spec,
         targets=target_mapping(no_output),
-        argv=["text", "render", "--value", "value", "--count", "1", "--upper"],
+        argv=["text", "render", "--value", "value", "--count", "1", "--upper", "true"],
     ) == 0
     assert capsys.readouterr() == ("", "")
 
@@ -221,7 +283,7 @@ def test_none_target_and_target_failure_have_stable_output(
     assert instance.api.invoke(
         spec_path=spec,
         targets=target_mapping(failure),
-        argv=["text", "render", "--value", "value", "--count", "1", "--upper"],
+        argv=["text", "render", "--value", "value", "--count", "1", "--upper", "true"],
     ) == 1
     captured = capsys.readouterr()
     assert captured.out == ""

@@ -81,16 +81,37 @@ def test_real_cli_help_named_calls_env_precedence_and_datamodel(
     assert "DIX_CLI_DEMO_VALUE" in command_help.out
     assert "DIX_CLI_DEMO_COUNT" in command_help.out
     assert "DIX_CLI_DEMO_UPPER" in command_help.out
+    assert "TRUE|FALSE" in command_help.out
 
-    assert run(["text", "render", "--value", "hello", "--count", "2", "--upper"]) == 0
+    assert run(["text", "render", "--value", "hello", "--count", "2"]) == 2
+    missing_boolean = capsys.readouterr()
+    assert missing_boolean.out == ""
+    assert "missing option '--upper'" in missing_boolean.err.lower()
+    assert "DIX_CLI_DEMO_UPPER" in missing_boolean.err
+    assert "['DIX_CLI_DEMO_UPPER']" not in missing_boolean.err
+    assert calls == []
+
+    assert (
+        run(["text", "render", "--value", "hello", "--count", "2", "--upper", "true"])
+        == 0
+    )
     direct = capsys.readouterr()
     assert direct.out == "HELLO\nHELLO\n"
     assert direct.err == ""
     assert calls[-1] == {"value": "hello", "count": 2, "upper": True}
 
+    assert (
+        run(["text", "render", "--value", "plain", "--count", "1", "--upper", "false"])
+        == 0
+    )
+    explicit_false = capsys.readouterr()
+    assert explicit_false.out == "plain\n"
+    assert explicit_false.err == ""
+    assert calls[-1] == {"value": "plain", "count": 1, "upper": False}
+
     monkeypatch.setenv("DIX_CLI_DEMO_VALUE", "hello")
     monkeypatch.setenv("DIX_CLI_DEMO_COUNT", "2")
-    assert run(["text", "render", "--upper"]) == 0
+    assert run(["text", "render", "--upper", "true"]) == 0
     environment = capsys.readouterr()
     assert environment.out == "HELLO\nHELLO\n"
     assert calls[-1] == {"value": "hello", "count": 2, "upper": True}
@@ -114,16 +135,65 @@ def test_invalid_values_and_unmapped_commands_never_call_target(
     monkeypatch.delenv("DIX_CLI_DEMO_COUNT", raising=False)
     monkeypatch.delenv("DIX_CLI_DEMO_UPPER", raising=False)
 
-    assert run(["text", "render", "hello", "--count", "1", "--upper"]) == 2
+    assert (
+        run(
+            [
+                "text",
+                "render",
+                "hello",
+                "--value",
+                "value",
+                "--count",
+                "1",
+                "--upper",
+                "true",
+            ]
+        )
+        == 2
+    )
     positional = capsys.readouterr()
     assert positional.out == ""
     assert "error" in positional.err.lower()
     assert calls == []
 
-    assert run(["text", "render", "--value", "hello", "--count", "nope"]) == 2
+    assert (
+        run(
+            [
+                "text",
+                "render",
+                "--value",
+                "hello",
+                "--count",
+                "nope",
+                "--upper",
+                "true",
+            ]
+        )
+        == 2
+    )
     invalid = capsys.readouterr()
     assert invalid.out == ""
     assert "not a valid int" in invalid.err.lower()
+    assert calls == []
+
+    assert (
+        run(
+            [
+                "text",
+                "render",
+                "--value",
+                "hello",
+                "--count",
+                "1",
+                "--upper",
+                "sometimes",
+            ]
+        )
+        == 2
+    )
+    invalid_boolean = capsys.readouterr()
+    assert invalid_boolean.out == ""
+    assert "invalid value for '--upper'" in invalid_boolean.err.lower()
     assert calls == []
 
     assert run(["text", "hidden"]) == 2
@@ -168,6 +238,7 @@ def test_harness_uses_explicit_teardown_and_changes_no_sources() -> None:
             "--count",
             "2",
             "--upper",
+            "true",
         ],
         cwd=REPOSITORY,
         text=True,

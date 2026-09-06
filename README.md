@@ -212,7 +212,8 @@ teardown. Load, create, and destroy do not invoke declared functions implicitly.
 `examples/modules/dix/core/cli` provides the first-party declarative Typer adapter as an ordinary
 composition. `examples/modules/acme/cli_demo` combines it with a transport-independent tool
 application through an explicit local target allowlist. Run the complete visible lifecycle-neutral
-path with `uv run python examples/run_cli_demo.py text render --value hello --count 2 --upper`.
+path with
+`uv run python examples/run_cli_demo.py text render --value hello --count 2 --upper true`.
 
 RPC, IPC, ROBA integration, process isolation, authentication, application startup management, and a
 remote application call surface are deliberately not implemented. They are possible future stacks over

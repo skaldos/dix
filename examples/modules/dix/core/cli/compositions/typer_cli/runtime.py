@@ -379,13 +379,18 @@ class Runtime:
 
 
 def _parameter(option: _Option) -> inspect.Parameter:
-    annotation = {"string": str, "integer": int, "boolean": bool}[option.type_name]
+    # A bool annotation makes Typer build a presence-only flag. DIX booleans are required
+    # values in this profile, so the adapter parses explicit true/false strings itself.
+    annotation = {"string": str, "integer": int, "boolean": str}[option.type_name]
+    boolean_value = option.type_name == "boolean"
     default = typer.Option(
         ...,
         *option.names,
         help=option.description,
-        envvar=list(option.env) or None,
+        envvar=option.env[0] if len(option.env) == 1 else list(option.env) or None,
         show_envvar=option.show_env,
+        callback=_parse_boolean if boolean_value else None,
+        metavar="TRUE|FALSE" if boolean_value else None,
     )
     return inspect.Parameter(
         option.field,
@@ -393,6 +398,15 @@ def _parameter(option: _Option) -> inspect.Parameter:
         default=default,
         annotation=annotation,
     )
+
+
+def _parse_boolean(value: str) -> bool:
+    normalized = value.strip().casefold()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise typer.BadParameter("expected 'true' or 'false'")
 
 
 def _parse_cli(path: Path) -> _CliDeclaration:
