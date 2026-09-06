@@ -130,7 +130,7 @@ class _AnyHandler:
 
 @dataclass(frozen=True)
 class _StrictTypeProcessor:
-    expected_type: type[Any]
+    expected_type: type[Any] | tuple[type[Any], ...]
     expected_name: str
     reject_bool: bool = False
 
@@ -159,7 +159,7 @@ class _StrictTypeProcessor:
 @dataclass(frozen=True)
 class _StrictTypeHandler:
     handler_id: str
-    expected_type: type[Any]
+    expected_type: type[Any] | tuple[type[Any], ...]
     expected_name: str
     reject_bool: bool = False
 
@@ -232,6 +232,47 @@ class ElementComponent:
                         handler_id="core.boolean",
                         expected_type=bool,
                         expected_name="boolean",
+                    ),
+                ),
+                _binding(
+                    "null",
+                    _StrictTypeHandler(
+                        handler_id="core.null",
+                        expected_type=type(None),
+                        expected_name="null",
+                    ),
+                ),
+                _binding(
+                    "number",
+                    _StrictTypeHandler(
+                        handler_id="core.number",
+                        expected_type=(int, float),
+                        expected_name="number",
+                        reject_bool=True,
+                    ),
+                ),
+                _binding(
+                    "binary",
+                    _StrictTypeHandler(
+                        handler_id="core.binary",
+                        expected_type=bytes,
+                        expected_name="binary",
+                    ),
+                ),
+                _binding(
+                    "array",
+                    _StrictTypeHandler(
+                        handler_id="core.array",
+                        expected_type=list,
+                        expected_name="array",
+                    ),
+                ),
+                _binding(
+                    "object",
+                    _StrictTypeHandler(
+                        handler_id="core.object",
+                        expected_type=dict,
+                        expected_name="object",
                     ),
                 ),
             )

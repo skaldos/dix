@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -89,8 +91,13 @@ def test_core_element_types_are_strict_and_inspectable() -> None:
         assert result.issues[0].code == "incompatible_type"
     assert {item.type_name for item in component.list_types()} == {
         "any",
+        "array",
+        "binary",
         "boolean",
         "integer",
+        "null",
+        "number",
+        "object",
         "string",
     }
     assert component.describe_type("integer").handler_id == "core.integer"
@@ -98,6 +105,45 @@ def test_core_element_types_are_strict_and_inspectable() -> None:
 
     with pytest.raises(ElementBindingError, match="does not accept configuration"):
         component.bind(ElementSpec(type="boolean", config={"parse": True}))
+
+
+@pytest.mark.parametrize(
+    ("type_name", "compatible_values", "incompatible_values"),
+    (
+        ("null", (None,), (False, 0, "", [], {})),
+        ("number", (0, -3, 1.5), (True, False, Decimal("1.5"), "1", None)),
+        ("binary", (b"", b"value"), (bytearray(b"value"), memoryview(b"value"), "value")),
+        ("array", ([], [1, "two"]), ((), {1, 2}, "value")),
+        ("object", ({}, {"value": 1}), (MappingProxyType({}), [], (), "value")),
+    ),
+)
+def test_additional_core_element_types_are_strict_and_preserve_values(
+    type_name: str,
+    compatible_values: tuple[Any, ...],
+    incompatible_values: tuple[Any, ...],
+) -> None:
+    processor = ElementComponent.with_core_types().bind(ElementSpec(type=type_name))
+
+    for value in compatible_values:
+        result = processor.decode(value)
+        assert result.compatible is True
+        assert result.value is value
+        assert result.issues == ()
+
+    for value in incompatible_values:
+        result = processor.decode(value)
+        assert result.compatible is False
+        assert result.value is None
+        assert result.issues[0].code == "incompatible_type"
+        assert result.issues[0].details["expected"] == type_name
+
+
+@pytest.mark.parametrize("type_name", ("null", "number", "binary", "array", "object"))
+def test_additional_core_element_types_reject_configuration(type_name: str) -> None:
+    with pytest.raises(ElementBindingError, match="does not accept configuration"):
+        ElementComponent.with_core_types().bind(
+            ElementSpec(type=type_name, config={"coerce": True})
+        )
 
 
 def test_extension_can_define_a_new_type_but_not_override_core() -> None:

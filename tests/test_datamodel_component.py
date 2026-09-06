@@ -112,6 +112,58 @@ def test_exact_mapping_instantiates_through_core_elements() -> None:
     assert result.issues == ()
 
 
+def test_extended_native_core_elements_instantiate_together() -> None:
+    datamodel = DatamodelComponent()
+    model = datamodel.register_model(
+        ModelDefinition(
+            uid=uuid4(),
+            name="native_values",
+            schema={
+                "nothing": ElementSpec(type="null"),
+                "number": ElementSpec(type="number"),
+                "payload": ElementSpec(type="binary"),
+                "items": ElementSpec(type="array"),
+                "attributes": ElementSpec(type="object"),
+            },
+        )
+    )
+    items = ["one", 2]
+    attributes = {"source": "test"}
+    payload = b"dix"
+
+    result = datamodel.instantiate(
+        model,
+        {
+            "nothing": None,
+            "number": 1.5,
+            "payload": payload,
+            "items": items,
+            "attributes": attributes,
+        },
+    )
+
+    assert result.compatible is True
+    assert result.values["nothing"] is None
+    assert result.values["number"] == 1.5
+    assert result.values["payload"] is payload
+    assert result.values["items"] is items
+    assert result.values["attributes"] is attributes
+
+    incompatible = datamodel.instantiate(
+        model,
+        {
+            "nothing": "",
+            "number": True,
+            "payload": bytearray(payload),
+            "items": tuple(items),
+            "attributes": list(attributes.items()),
+        },
+    )
+
+    assert incompatible.compatible is False
+    assert [issue.code for issue in incompatible.issues] == ["incompatible_type"] * 5
+
+
 def test_model_result_separates_missing_additional_and_element_issues() -> None:
     datamodel = DatamodelComponent()
     model = datamodel.register_model(definition())

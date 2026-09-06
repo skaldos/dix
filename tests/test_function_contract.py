@@ -100,6 +100,47 @@ def test_contract_model_is_immutable_and_unknown_return_uses_any() -> None:
         contract.input_model.schema["extra"] = contract.input_model.schema["value"]  # type: ignore[index]
 
 
+def test_native_value_annotations_project_to_extended_core_elements() -> None:
+    signature = inspect.Signature(
+        parameters=(
+            inspect.Parameter("nothing", inspect.Parameter.KEYWORD_ONLY, annotation=type(None)),
+            inspect.Parameter("ratio", inspect.Parameter.KEYWORD_ONLY, annotation=float),
+            inspect.Parameter("payload", inspect.Parameter.KEYWORD_ONLY, annotation=bytes),
+            inspect.Parameter("items", inspect.Parameter.KEYWORD_ONLY, annotation=list),
+            inspect.Parameter("attributes", inspect.Parameter.KEYWORD_ONLY, annotation=dict),
+        ),
+        return_annotation=None,
+    )
+
+    contract = derive_function_contract("test/tool", "native", signature)
+
+    assert [parameter.element_type for parameter in contract.parameters] == [
+        "null",
+        "number",
+        "binary",
+        "array",
+        "object",
+    ]
+    assert [parameter.projection for parameter in contract.parameters] == ["exact"] * 5
+    assert contract.output.element.type == "null"
+    assert contract.output.projection == "exact"
+
+
+def test_parameterized_native_containers_remain_honest_fallbacks() -> None:
+    def target(*, items: list[str], attributes: dict[str, int]) -> list[str]:
+        return items
+
+    contract = derive_function_contract("test/tool", "containers", inspect.signature(target))
+
+    assert [parameter.element_type for parameter in contract.parameters] == ["any", "any"]
+    assert [parameter.projection for parameter in contract.parameters] == [
+        "fallback_any",
+        "fallback_any",
+    ]
+    assert contract.output.element.type == "any"
+    assert contract.output.projection == "fallback_any"
+
+
 def test_loaded_application_reuses_one_descriptor_and_contract_identity() -> None:
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)

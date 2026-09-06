@@ -89,12 +89,22 @@ def derive_function_contract(
 
 def _project_annotation(annotation: object) -> tuple[str, FunctionProjection]:
     annotation_name = annotation if isinstance(annotation, str) else None
+    if annotation is None or annotation is type(None) or annotation_name in ("None", "NoneType"):
+        return "null", "exact"
     if annotation is str or annotation_name == "str":
         return "string", "exact"
     if annotation is int or annotation_name == "int":
         return "integer", "exact"
+    if annotation is float or annotation_name == "float":
+        return "number", "exact"
     if annotation is bool or annotation_name == "bool":
         return "boolean", "exact"
+    if annotation is bytes or annotation_name == "bytes":
+        return "binary", "exact"
+    if annotation is list or annotation_name == "list":
+        return "array", "exact"
+    if annotation is dict or annotation_name == "dict":
+        return "object", "exact"
     if (
         annotation is Any
         or annotation is object
