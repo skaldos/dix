@@ -9,14 +9,18 @@ import pytest
 from dix.core import (
     ApplicationComponent,
     CompositionComponent,
+    DatamodelComponent,
     ModuleComponent,
     create_core_component_registry,
     derive_function_contract,
 )
+from dix.core.application import ApplicationInstanceSpec
+from dix.core.composition import CompositionInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 CLI_DEMO_MODULE = REPOSITORY / "examples" / "modules" / "acme" / "cli_demo"
 CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
 
 
 def test_signature_projection_preserves_parameter_semantics_and_falls_back_safely() -> None:
@@ -99,16 +103,22 @@ def test_contract_model_is_immutable_and_unknown_return_uses_any() -> None:
 def test_loaded_application_reuses_one_descriptor_and_contract_identity() -> None:
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
     modules.load_module(CLI_MODULE, module_id="dix/core/cli")
     modules.load_module(CLI_DEMO_MODULE, module_id="acme/cli_demo")
     applications = registry.require("application", ApplicationComponent)
 
     first = applications.describe_function("acme/cli_demo/tool", "render")
     second = applications.describe_function("acme/cli_demo/tool", "render")
+    instance = applications.create_instance(
+        ApplicationInstanceSpec("tool", "acme/cli_demo/tool", {}, REPOSITORY),
+        owner_scope_id="contract",
+    )
 
     assert first is second
     assert first.contract is second.contract
     assert first.contract.input_model.uid == second.contract.input_model.uid
+    assert instance.api.describe("render") is first
     assert first.contract.input_model.schema == {
         "value": first.contract.input_model.schema["value"],
         "count": first.contract.input_model.schema["count"],
@@ -119,12 +129,19 @@ def test_loaded_application_reuses_one_descriptor_and_contract_identity() -> Non
 def test_loaded_composition_reuses_one_descriptor_and_contract_identity() -> None:
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
     modules.load_module(CLI_MODULE, module_id="dix/core/cli")
     compositions = registry.require("composition", CompositionComponent)
 
     first = compositions.describe_function("dix/core/cli/typer_cli", "invoke")
     second = compositions.describe_function("dix/core/cli/typer_cli", "invoke")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("cli", "dix/core/cli/typer_cli", {}, REPOSITORY),
+        owner_scope_id="contract",
+    )
 
     assert first is second
     assert first.contract is second.contract
     assert first.contract.input_model.uid == second.contract.input_model.uid
+    assert instance.api.describe("invoke") is first
+    assert registry.require("datamodel", DatamodelComponent).registration_count == 0

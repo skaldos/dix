@@ -5,7 +5,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID, uuid4
 
-from dix.core import DatamodelComponent, ElementBinding, ModelDefinition, RegisteredModel
+from dix.core import (
+    DatamodelComponent,
+    ElementBinding,
+    ElementProcessor,
+    ModelDefinition,
+    RegisteredModel,
+)
 from dix.core.application import (
     ApplicationComponent,
     ApplicationDescriptor,
@@ -36,7 +42,7 @@ class Runtime:
         self.datamodel = datamodel
         self._input_models: dict[tuple[str, str], RegisteredModel] = {}
         self._input_overrides: dict[UUID, tuple[str, str, RegisteredModel]] = {}
-        self._output_models: dict[tuple[str, str], RegisteredModel] = {}
+        self._output_processors: dict[tuple[str, str], ElementProcessor] = {}
 
     def describe_application(self, application_id: str) -> ApplicationDescriptor:
         return self.application.describe_application(application_id)
@@ -75,14 +81,17 @@ class Runtime:
         self,
         application_id: str,
         function_id: str,
-        args: Sequence[Any] = (),
-        kwargs: Mapping[str, Any] = {},
-        application_config: Mapping[str, object] = {},
+        args: Sequence[Any] | None = None,
+        kwargs: Mapping[str, Any] | None = None,
+        application_config: Mapping[str, object] | None = None,
         input_model_uid: UUID | None = None,
     ) -> Any:
         descriptor = self.describe_function(application_id, function_id)
         try:
-            bound = descriptor.signature.bind(*tuple(args), **dict(kwargs))
+            bound = descriptor.signature.bind(
+                *(() if args is None else tuple(args)),
+                **({} if kwargs is None else dict(kwargs)),
+            )
         except TypeError as exc:
             raise ApplicationHostError(
                 f"cannot bind input for '{application_id}.{function_id}': {exc}"
@@ -110,7 +119,7 @@ class Runtime:
                 ApplicationInstanceSpec(
                     id=instance_id,
                     use=application_id,
-                    config=application_config,
+                    config={} if application_config is None else application_config,
                     config_base_dir=self.context.config_base_dir,
                 ),
                 owner_scope_id=owner_scope_id,
@@ -119,14 +128,14 @@ class Runtime:
             value = instance.api.require(function_id)(*bound.args, **bound.kwargs)
             if inspect.isawaitable(value):
                 value = await value
-            output_model = self._require_output_model(descriptor)
-            output_result = self.datamodel.instantiate(output_model, {"result": value})
+            output_processor = self._require_output_processor(descriptor)
+            output_result = output_processor.decode(value)
             if not output_result.compatible:
                 raise ApplicationHostError(
                     f"output is incompatible with '{application_id}.{function_id}': "
                     f"{_format_issues(output_result.issues)}"
                 )
-            return output_result.values["result"]
+            return output_result.value
         finally:
             if created:
                 self.application.destroy_instance(owner_scope_id, instance_id)
@@ -160,22 +169,19 @@ class Runtime:
             self._input_models[key] = model
         return model
 
-    def _require_output_model(
+    def _require_output_processor(
         self,
         descriptor: ApplicationFunctionDescriptor,
-    ) -> RegisteredModel:
+    ) -> ElementProcessor:
         key = (descriptor.application_id, descriptor.id)
-        model = self._output_models.get(key)
-        if model is None:
-            definition = ModelDefinition(
-                uid=uuid4(),
-                name=f"{descriptor.application_id}/{descriptor.id}/output",
-                version=None,
-                schema={"result": descriptor.contract.output.element},
+        processor = self._output_processors.get(key)
+        if processor is None:
+            processor = self.datamodel.element.bind(
+                descriptor.contract.output.element,
+                self.datamodel.element.default_scope,
             )
-            model = self.datamodel.register_model(definition)
-            self._output_models[key] = model
-        return model
+            self._output_processors[key] = processor
+        return processor
 
 
 def _format_issues(issues: Sequence[object]) -> str:

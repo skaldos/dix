@@ -7,6 +7,7 @@ import pytest
 
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
+from dix.core.module.component import ModuleComponentError
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
@@ -65,3 +66,41 @@ def test_runner_rejects_unloaded_targets_without_loading_modules(tmp_path: Path)
         )
 
     assert modules.module_descriptors() == before
+
+
+def test_runner_can_be_a_child_and_live_roots_block_module_unload(tmp_path: Path) -> None:
+    parent_module = tmp_path / "parent"
+    parent = parent_module / "apps" / "parent"
+    parent.mkdir(parents=True)
+    (parent / "app.toml").write_text(
+        """[app]
+id = "parent"
+
+[apps.runner]
+use = "dix/core/app/runner"
+"""
+    )
+    (parent / "runtime.py").write_text(
+        """class Runtime:
+    def __init__(self, *, context, config, runner):
+        self.runner = runner
+"""
+    )
+    registry = create_core_component_registry()
+    modules = registry.require("module", ModuleComponent)
+    applications = registry.require("application", ApplicationComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
+    modules.load_module(parent_module, module_id="test/parent")
+    root = applications.create_instance(
+        ApplicationInstanceSpec("parent", "test/parent/parent", {}, tmp_path),
+        owner_scope_id="test",
+    )
+
+    assert root.runtime.runner is applications.require_instance("test", "parent/runner").api
+    with pytest.raises(ModuleComponentError, match="cannot be unloaded while it is in use"):
+        modules.unload_module("dix/core/app")
+
+    applications.destroy_instance("test", "parent")
+    modules.unload_module("test/parent")
+    modules.unload_module("dix/core/app")
+    assert modules.module_descriptors() == ()

@@ -39,6 +39,15 @@ description = "Render one value asynchronously."
 
 [functions.fail]
 description = "Fail after construction."
+
+[functions.mixed]
+description = "Exercise every fixed Python parameter kind."
+
+[functions.variadic]
+description = "Exercise variadic Python binding."
+
+[functions.bad_output]
+description = "Return a value incompatible with the declared output."
 """
     )
     (root / "runtime.py").write_text(
@@ -57,6 +66,16 @@ class Runtime:
 
     def fail(self, *, value: str) -> str:
         raise RuntimeError(value)
+
+    def mixed(self, positional: str, /, count: int = 1, *, upper: bool = False) -> str:
+        value = positional * count
+        return value.upper() if upper else value
+
+    def variadic(self, prefix: str, *values, **metadata) -> str:
+        return prefix + ":" + ",".join(values) + ":" + str(metadata["suffix"])
+
+    def bad_output(self) -> str:
+        return 7
 """
     )
 
@@ -93,6 +112,15 @@ def test_host_describes_and_executes_sync_and_async_calls_without_leaks(tmp_path
             kwargs={"value": "x"},
         )
     ) == "x"
+    registrations = host.runtime.datamodel.registration_count
+    assert asyncio.run(
+        host.api.execute(
+            "test/target/target",
+            "render",
+            kwargs={"value": "cached"},
+        )
+    ) == "cached"
+    assert host.runtime.datamodel.registration_count == registrations
     assert asyncio.run(
         host.api.execute(
             "test/target/target",
@@ -101,7 +129,23 @@ def test_host_describes_and_executes_sync_and_async_calls_without_leaks(tmp_path
         )
     ) == "async"
     assert applications.instances() == ()
-    assert marker.read_text().splitlines() == ["create", "create"]
+    assert asyncio.run(
+        host.api.execute(
+            "test/target/target",
+            "mixed",
+            args=("m",),
+            kwargs={"upper": True},
+        )
+    ) == "M"
+    assert asyncio.run(
+        host.api.execute(
+            "test/target/target",
+            "variadic",
+            args=("v", "a", "b"),
+            kwargs={"suffix": 3},
+        )
+    ) == "v:a,b:3"
+    assert marker.read_text().splitlines() == ["create"] * 5
 
 
 def test_host_rejects_bad_input_before_construction_and_cleans_up_failures(
@@ -129,6 +173,16 @@ def test_host_rejects_bad_input_before_construction_and_cleans_up_failures(
         )
     assert applications.instances() == ()
     assert marker.read_text() == "create\n"
+
+    with pytest.raises(Exception, match="output is incompatible"):
+        asyncio.run(
+            host.api.execute(
+                "test/target/target",
+                "bad_output",
+            )
+        )
+    assert applications.instances() == ()
+    assert marker.read_text() == "create\ncreate\n"
 
 
 @dataclass(frozen=True)
@@ -181,3 +235,47 @@ def test_host_accepts_scoped_model_overrides_with_element_wrappers(tmp_path: Pat
 
     assert descriptor.contract.input_model.uid != override.uid
     assert result == "CUSTOM"
+
+
+def test_host_model_overrides_do_not_leak_to_another_host_instance(tmp_path: Path) -> None:
+    host, _, _ = host_runtime(tmp_path)
+    compositions = host.runtime.application._compositions
+    other = compositions.create_instance(
+        CompositionInstanceSpec("other", "dix/core/app/host", {}, tmp_path),
+        owner_scope_id="other",
+    )
+    override = ModelDefinition(
+        uid=uuid4(),
+        name="test/upper",
+        schema={"value": ElementSpec("string"), "count": ElementSpec("integer")},
+    )
+    model_uid = host.api.register_input_model(
+        "test/target/target",
+        "render",
+        override,
+        (
+            ElementBinding(
+                type_name="string",
+                handler_id="test.upper",
+                handler=_UpperHandler(),
+                mode="wrap",
+            ),
+        ),
+    )
+
+    with pytest.raises(Exception, match="not registered in this host"):
+        asyncio.run(
+            other.api.execute(
+                "test/target/target",
+                "render",
+                kwargs={"value": "isolated", "count": 1},
+                input_model_uid=model_uid,
+            )
+        )
+    assert asyncio.run(
+        other.api.execute(
+            "test/target/target",
+            "render",
+            kwargs={"value": "isolated", "count": 1},
+        )
+    ) == "isolated"

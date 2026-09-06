@@ -1,0 +1,14 @@
+[app]
+id = "auto"
+
+[compositions.cli]
+use = "dix/core/cli/typer_cli"
+
+[apps.runner]
+use = "dix/core/app/runner"
+
+[functions.describe]
+description = "Describe the automatic CLI for one loaded application."
+
+[functions.run]
+description = "Run one loaded application through its automatic CLI."

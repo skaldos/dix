@@ -58,9 +58,9 @@ class Runtime:
         self,
         application_id: str,
         function_id: str,
-        args: Sequence[Any] = (),
-        kwargs: Mapping[str, Any] = {},
-        application_config: Mapping[str, object] = {},
+        args: Sequence[Any] | None = None,
+        kwargs: Mapping[str, Any] | None = None,
+        application_config: Mapping[str, object] | None = None,
         input_model_uid: UUID | None = None,
     ) -> Any:
         return await self.host.require("execute")(

@@ -15,6 +15,7 @@ from dix.core.application import ApplicationInstanceSpec
 REPOSITORY = Path(__file__).resolve().parents[1]
 MODULES = REPOSITORY / "examples" / "modules"
 CLI_MODULE = MODULES / "dix" / "core" / "cli"
+APP_MODULE = MODULES / "dix" / "core" / "app"
 DEMO_MODULE = MODULES / "acme" / "cli_demo"
 HARNESS = REPOSITORY / "examples" / "run_cli_demo.py"
 
@@ -24,6 +25,7 @@ def load_demo(monkeypatch: pytest.MonkeyPatch):
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     applications = registry.require("application", ApplicationComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
     modules.load_module(CLI_MODULE, module_id="dix/core/cli")
     loaded = modules.load_module(DEMO_MODULE, module_id="acme/cli_demo")
     tool_type = loaded.applications["acme/cli_demo/tool"].runtime_type
@@ -59,6 +61,7 @@ def test_real_module_load_create_describe_and_allowlist_are_side_effect_free(
     applications.destroy_instance("e2e", "cli")
     modules.unload_module("acme/cli_demo")
     modules.unload_module("dix/core/cli")
+    modules.unload_module("dix/core/app")
     assert calls == []
 
 

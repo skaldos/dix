@@ -17,6 +17,7 @@ from dix.core.composition import CompositionInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
 
 
 def write_contract(root: Path, *, cli_extra: str = "", model_extra: str = "") -> Path:
@@ -75,6 +76,7 @@ def cli_runtime(tmp_path: Path, instance_id: str = "cli"):
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
     modules.load_module(CLI_MODULE, module_id="dix/core/cli")
     instance = compositions.create_instance(
         CompositionInstanceSpec(instance_id, "dix/core/cli/typer_cli", {}, tmp_path),

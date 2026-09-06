@@ -584,10 +584,10 @@ def _write_automatic_output(function_id: str, output: object) -> None:
     if isinstance(output, int):
         typer.echo(str(output))
         return
-    if isinstance(output, (dict, list)):
+    if isinstance(output, (Mapping, list)):
         try:
             rendered = json.dumps(
-                output,
+                _json_value(output),
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -602,6 +602,18 @@ def _write_automatic_output(function_id: str, output: object) -> None:
         f"function '{function_id}' returned unsupported output type "
         f"'{type(output).__name__}'"
     )
+
+
+def _json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return [_json_value(item) for item in value]
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("JSON object keys must be strings")
+        return {key: _json_value(item) for key, item in value.items()}
+    raise TypeError(f"unsupported JSON value: {type(value).__name__}")
 
 
 def _invoke_typer(application: typer.Typer, argv: Sequence[str]) -> int:

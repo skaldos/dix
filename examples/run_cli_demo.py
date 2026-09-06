@@ -13,6 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     applications = registry.require("application", ApplicationComponent)
+    modules.load_module(modules_root / "dix" / "core" / "app", module_id="dix/core/app")
     modules.load_module(modules_root / "dix" / "core" / "cli", module_id="dix/core/cli")
     modules.load_module(modules_root / "acme" / "cli_demo", module_id="acme/cli_demo")
     instance = applications.create_instance(
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         applications.destroy_instance("example:cli", "cli")
         modules.unload_module("acme/cli_demo")
         modules.unload_module("dix/core/cli")
+        modules.unload_module("dix/core/app")
 
 
 if __name__ == "__main__":

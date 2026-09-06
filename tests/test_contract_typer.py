@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
@@ -17,11 +18,13 @@ from dix.core.module import ModuleDescriptor
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
 
 
 def typer_runtime(tmp_path: Path):
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
+    modules.load_module(APP_MODULE, module_id="dix/core/app")
     modules.load_module(CLI_MODULE, module_id="dix/core/cli")
     compositions = registry.require("composition", CompositionComponent)
     return compositions.create_instance(
@@ -128,6 +131,18 @@ def test_auto_projection_describes_help_and_invokes_without_explicit_cli_files(
     assert capsys.readouterr().out == "xx\n"
     assert calls == [("render", ("x",), {"count": 2, "upper": False})]
 
+    first_tree = cli.api.build_application(descriptor=descriptor, invoke=invoke)
+    second_tree = cli.api.build_application(descriptor=descriptor, invoke=invoke)
+    assert first_tree is not second_tree
+
+    assert cli.api.invoke_application(
+        descriptor=descriptor,
+        invoke=invoke,
+        argv=["render", "--positional", "d"],
+    ) == 0
+    assert capsys.readouterr().out == "dd\n"
+    assert calls[-1] == ("render", ("d",), {"count": 2, "upper": False})
+
     assert cli.api.invoke_application(
         descriptor=descriptor,
         invoke=invoke,
@@ -168,7 +183,7 @@ def test_auto_projection_has_stable_scalar_json_none_and_error_output(
     outputs = {
         "number": 7,
         "flag": False,
-        "payload": {"z": [2, 1], "a": True},
+        "payload": MappingProxyType({"z": [2, 1], "a": True}),
         "empty": None,
         "unsupported": object(),
     }

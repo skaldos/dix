@@ -3,12 +3,13 @@
 Declarative Interface eXecutor.
 
 `dix` provides narrow core capabilities plus trusted, in-process Python compositions and
-applications. The current foundation proves three independent end-to-end paths:
+applications. The current foundation proves four independent end-to-end paths:
 
 ```text
 UI element state/functions -> UI component -> interface -> API -> optional renderer
 trusted module root -> composition spec -> isolated composition graph -> local function API
 component -> composition -> application -> child application -> local function API
+loaded app -> automatic function contract -> one-shot runner -> generated Typer CLI
 ```
 
 The project intentionally does **not** include business-specific provisioning logic, AD/LDAP/OIDC,
@@ -35,6 +36,9 @@ PDF generation, a workflow engine, package management, remote plugin admission, 
   runs only through declared functions.
 - **Application API**: the declared local function surface used by parent applications and direct Python
   consumers. It is not automatically exposed through HTTP, sockets, or CLI calls.
+- **Function contract**: an immutable projection of each declared runtime function's real Python
+  signature into a local input datamodel and output element contract. Projection does not validate
+  ordinary direct API calls and does not mutate a global model registry.
 - **Renderer**: a presentation adapter. The included HTML/Jinja/HTMX renderer is optional and consumes
   the same interface model under `/render`.
 
@@ -214,6 +218,22 @@ composition. `examples/modules/acme/cli_demo` combines it with a transport-indep
 application through an explicit local target allowlist. Run the complete visible lifecycle-neutral
 path with
 `uv run python examples/run_cli_demo.py text render --value hello --count 2 --upper true`.
+
+The same tool can be projected automatically without reading its `cli.toml`, its explicit model, or
+target-specific glue. `dix/core/app/runner` creates the target one-shot, validates through its local
+datamodel scope, awaits async results, and always destroys the target graph. The `dix/core/cli/auto`
+application connects that runner to Typer:
+
+```bash
+uv run python examples/run_auto_cli.py \
+  acme/cli_demo/tool \
+  render --value hello --count 2 --upper true
+```
+
+This proves only an in-process, already-loaded application path. Module/config discovery, daemon
+hosting, remote transports, authorization, sandbox policy, and richer CLI metadata remain separate
+future layers. Long-running applications can later be represented through explicit app/host
+functions; the primitive core intentionally has no universal lifecycle hook.
 
 RPC, IPC, ROBA integration, process isolation, authentication, application startup management, and a
 remote application call surface are deliberately not implemented. They are possible future stacks over
