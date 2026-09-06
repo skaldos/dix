@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from dix.core.composition.models import CompositionDependencySpec
+from dix.core.function import FunctionContract
 
 if TYPE_CHECKING:
     from dix.core.composition.models import CompositionInstance
@@ -78,6 +79,7 @@ class LoadedApplicationDefinition:
     runtime_type: type[object]
     runtime_module_name: str
     module: ModuleDescriptor
+    functions: tuple[ApplicationFunctionDescriptor, ...]
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,7 @@ class ApplicationFunctionDescriptor:
     signature: inspect.Signature
     return_annotation: object
     docstring: str | None
+    contract: FunctionContract
     is_async: bool = False
 
 

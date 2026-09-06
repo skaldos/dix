@@ -4,6 +4,8 @@ import inspect
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
+from dix.core.function import derive_function_contract
+
 from .models import (
     CompositionDefinition,
     CompositionFunctionDescriptor,
@@ -115,6 +117,9 @@ def describe_runtime_functions(
                 return_annotation=public_signature.return_annotation,
                 docstring=inspect.getdoc(raw_method),
                 is_async=inspect.iscoroutinefunction(raw_method),
+                contract=derive_function_contract(
+                    definition.id, function_id, public_signature
+                ),
             )
         )
     return tuple(descriptors)
@@ -124,8 +129,9 @@ def create_api(
     definition: CompositionDefinition,
     runtime: object,
     dependencies: Mapping[str, CompositionApi],
+    descriptors: tuple[CompositionFunctionDescriptor, ...] | None = None,
 ) -> CompositionApi:
-    descriptors = describe_runtime_functions(definition, type(runtime))
+    descriptors = descriptors or describe_runtime_functions(definition, type(runtime))
     functions: dict[str, Callable[..., object]] = {}
     for descriptor in descriptors:
         if descriptor.origin is not None:

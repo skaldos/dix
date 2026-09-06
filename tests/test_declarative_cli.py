@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
+from dix.core import (
+    CompositionComponent,
+    ModuleComponent,
+    create_core_component_registry,
+    derive_function_contract,
+)
 from dix.core.application import ApplicationFunctionDescriptor
 from dix.core.composition import CompositionInstanceSpec
 
@@ -88,6 +93,7 @@ def target_mapping(function):
         signature=signature,
         return_annotation=signature.return_annotation,
         docstring=inspect.getdoc(function),
+        contract=derive_function_contract("test/tool", "render", signature),
     )
     return {"tool.render": {"function": function, "descriptor": descriptor}}
 

@@ -63,14 +63,21 @@ class CompositionComponent:
         imported: list[str] = []
         staged: dict[str, LoadedCompositionDefinition] = {}
         try:
+            runtimes: list[tuple[CompositionDefinition, type[object], str]] = []
             for definition in definitions:
                 runtime_type, module_name = self._import_runtime(definition, artifact_digest)
                 imported.append(module_name)
+                runtimes.append((definition, runtime_type, module_name))
+            for definition, runtime_type, module_name in runtimes:
+                aliases = (*sorted(definition.components), *sorted(definition.compositions))
+                validate_runtime_constructor(runtime_type, aliases)
+                functions = describe_runtime_functions(definition, runtime_type)
                 staged[definition.id] = LoadedCompositionDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
                     runtime_module_name=module_name,
                     module=module,
+                    functions=functions,
                 )
         except Exception:
             for module_name in imported:
@@ -90,7 +97,7 @@ class CompositionComponent:
     def _describe_candidate_functions(
         loaded: LoadedCompositionDefinition,
     ) -> tuple[CompositionFunctionDescriptor, ...]:
-        return describe_runtime_functions(loaded.definition, loaded.runtime_type)
+        return loaded.functions
 
     def _publish_definitions(self, staged: Mapping[str, LoadedCompositionDefinition]) -> None:
         self._definitions.update(staged)
@@ -253,7 +260,12 @@ class CompositionComponent:
                     config=config,
                     **injected,
                 )
-                api = create_api(definition, runtime, child_apis)
+                api = create_api(
+                    definition,
+                    runtime,
+                    child_apis,
+                    loaded_definition.functions,
+                )
             except CompositionRuntimeError:
                 raise
             except Exception as exc:
@@ -408,10 +420,7 @@ class CompositionComponent:
 
         visit(composition_id)
         descriptors = {
-            definition_id: describe_runtime_functions(
-                candidates[definition_id].definition,
-                candidates[definition_id].runtime_type,
-            )
+            definition_id: candidates[definition_id].functions
             for definition_id in visited
         }
         function_ids = {
@@ -437,10 +446,7 @@ class CompositionComponent:
     ) -> dict[str, tuple[CompositionFunctionDescriptor, ...]]:
         graph = self.describe_dependency_graph(composition_id)
         descriptors = {
-            definition_id: describe_runtime_functions(
-                self.require_definition(definition_id),
-                self._require_loaded_definition(definition_id).runtime_type,
-            )
+            definition_id: self._require_loaded_definition(definition_id).functions
             for definition_id in graph.nodes
         }
         function_ids = {

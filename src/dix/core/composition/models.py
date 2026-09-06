@@ -7,6 +7,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
+from dix.core.function import FunctionContract
+
 if TYPE_CHECKING:
     from dix.core.module.models import ModuleDescriptor
 
@@ -75,6 +77,7 @@ class LoadedCompositionDefinition:
     runtime_type: type[object]
     runtime_module_name: str
     module: ModuleDescriptor
+    functions: tuple[CompositionFunctionDescriptor, ...]
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,7 @@ class CompositionFunctionDescriptor:
     signature: inspect.Signature
     return_annotation: object
     docstring: str | None
+    contract: FunctionContract
     is_async: bool = False
 
 

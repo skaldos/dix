@@ -27,6 +27,13 @@ from .element import (
     UnknownElementType,
 )
 from .module.component import ModuleComponent, ModuleComponentError
+from .function import (
+    FunctionContract,
+    FunctionParameterDescriptor,
+    FunctionProjection,
+    FunctionValueContract,
+    derive_function_contract,
+)
 from .registry import (
     ComponentLifetime,
     ComponentProvider,
@@ -59,6 +66,10 @@ __all__ = [
     "ElementScope",
     "ElementSpec",
     "ElementTypeDescriptor",
+    "FunctionContract",
+    "FunctionParameterDescriptor",
+    "FunctionProjection",
+    "FunctionValueContract",
     "ModelDefinition",
     "ModelIssue",
     "ModelNotFound",
@@ -69,4 +80,5 @@ __all__ = [
     "RegisteredModelDescriptor",
     "UnknownElementType",
     "create_core_component_registry",
+    "derive_function_contract",
 ]

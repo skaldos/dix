@@ -215,6 +215,7 @@ class ApplicationComponent:
                     runtime,
                     composition_apis,
                     child_apis,
+                    loaded.functions,
                 )
             except ApplicationRuntimeError:
                 raise
@@ -325,14 +326,21 @@ class ApplicationComponent:
         imported: list[str] = []
         staged: dict[str, LoadedApplicationDefinition] = {}
         try:
+            runtimes: list[tuple[ApplicationDefinition, type[object], str]] = []
             for definition in definitions:
                 runtime_type, module_name = self._import_runtime(definition, artifact_digest)
                 imported.append(module_name)
+                runtimes.append((definition, runtime_type, module_name))
+            for definition, runtime_type, module_name in runtimes:
+                aliases = (*sorted(definition.compositions), *sorted(definition.applications))
+                validate_runtime_constructor(runtime_type, aliases)
+                functions = describe_runtime_functions(definition, runtime_type)
                 staged[definition.id] = LoadedApplicationDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
                     runtime_module_name=module_name,
                     module=module,
+                    functions=functions,
                 )
         except Exception:
             for module_name in imported:
@@ -464,10 +472,7 @@ class ApplicationComponent:
 
         collect(application_id)
         descriptors = {
-            candidate_id: describe_runtime_functions(
-                applications[candidate_id].definition,
-                applications[candidate_id].runtime_type,
-            )
+            candidate_id: applications[candidate_id].functions
             for candidate_id in visited
         }
         application_functions = {

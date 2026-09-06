@@ -5,6 +5,8 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from dix.core.function import derive_function_contract
+
 from .models import (
     ApplicationDefinition,
     ApplicationFunctionDescriptor,
@@ -120,6 +122,9 @@ def describe_runtime_functions(
                 return_annotation=public_signature.return_annotation,
                 docstring=inspect.getdoc(function),
                 is_async=inspect.iscoroutinefunction(function),
+                contract=derive_function_contract(
+                    definition.id, function_id, public_signature
+                ),
             )
         )
     return tuple(descriptors)
@@ -130,8 +135,9 @@ def create_api(
     runtime: object,
     composition_dependencies: Mapping[str, CompositionApi],
     application_dependencies: Mapping[str, ApplicationApi],
+    descriptors: tuple[ApplicationFunctionDescriptor, ...] | None = None,
 ) -> ApplicationApi:
-    descriptors = describe_runtime_functions(definition, type(runtime))
+    descriptors = descriptors or describe_runtime_functions(definition, type(runtime))
     dependencies = {**composition_dependencies, **application_dependencies}
     functions: dict[str, Callable[..., object]] = {}
     for descriptor in descriptors:
