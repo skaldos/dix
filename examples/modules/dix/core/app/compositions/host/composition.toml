@@ -1,0 +1,18 @@
+[composition]
+id = "host"
+
+[components]
+application = "application"
+datamodel = "datamodel"
+
+[functions.describe_application]
+description = "Describe one already loaded application definition."
+
+[functions.describe_function]
+description = "Describe one function of an already loaded application definition."
+
+[functions.register_input_model]
+description = "Register a scoped input model override for one application function."
+
+[functions.execute]
+description = "Execute one function through an isolated one-shot application instance."
