@@ -12,3 +12,12 @@ description = "Build one Typer application from a normalized CLI declaration."
 
 [functions.invoke]
 description = "Build and invoke one CLI with explicit argv."
+
+[functions.describe_application]
+description = "Describe an automatic CLI projection from one application descriptor."
+
+[functions.build_application]
+description = "Build an automatic Typer CLI from one application descriptor."
+
+[functions.invoke_application]
+description = "Build and invoke an automatic application CLI with explicit argv."

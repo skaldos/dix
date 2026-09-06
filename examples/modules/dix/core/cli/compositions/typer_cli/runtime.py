@@ -17,6 +17,7 @@ from click.testing import CliRunner
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from dix.core import DatamodelComponent, ElementSpec, ModelDefinition, RegisteredModel
+from dix.core.application import ApplicationDescriptor, ApplicationFunctionDescriptor
 from dix.core.composition import CompositionRuntimeContext
 
 
@@ -133,6 +134,19 @@ class _Cli:
         object.__setattr__(self, "commands", MappingProxyType(dict(self.commands)))
 
 
+@dataclass(frozen=True)
+class _AutomaticCommand:
+    id: str
+    descriptor: ApplicationFunctionDescriptor
+
+
+@dataclass(frozen=True)
+class _AutomaticCli:
+    name: str
+    description: str
+    commands: tuple[_AutomaticCommand, ...]
+
+
 class Runtime:
     """First-party Typer adapter over explicit DIX application call targets."""
 
@@ -198,6 +212,49 @@ class Runtime:
         ):
             print(f"Error: {result.exception}", file=sys.stderr)
         return int(result.exit_code)
+
+    def describe_application(
+        self,
+        *,
+        descriptor: ApplicationDescriptor,
+    ) -> Mapping[str, object]:
+        """Describe the strict automatic CLI projection without creating an app instance."""
+        cli = self._normalize_application(descriptor)
+        return {
+            "name": cli.name,
+            "description": cli.description,
+            "commands": {
+                command.id: _describe_function_contract(command.descriptor)
+                for command in cli.commands
+            },
+        }
+
+    def build_application(
+        self,
+        *,
+        descriptor: ApplicationDescriptor,
+        invoke: Callable[[str, Sequence[object], Mapping[str, object]], object],
+    ) -> typer.Typer:
+        """Build a fresh CLI directly from one loaded application descriptor."""
+        return self._build_application_cli(
+            self._normalize_application(descriptor),
+            invoke,
+        )
+
+    def invoke_application(
+        self,
+        *,
+        descriptor: ApplicationDescriptor,
+        invoke: Callable[[str, Sequence[object], Mapping[str, object]], object],
+        argv: Sequence[str],
+    ) -> int:
+        """Invoke an automatic CLI without terminating the embedding process."""
+        try:
+            application = self.build_application(descriptor=descriptor, invoke=invoke)
+        except (DeclarativeCliError, ValidationError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        return _invoke_typer(application, argv)
 
     def _normalize(
         self,
@@ -353,6 +410,67 @@ class Runtime:
             parent.command(name=command.path[-1], help=command.description)(callback)
         return application
 
+    def _normalize_application(self, descriptor: ApplicationDescriptor) -> _AutomaticCli:
+        if not isinstance(descriptor, ApplicationDescriptor):
+            raise DeclarativeCliError("automatic CLI requires an ApplicationDescriptor")
+        commands: list[_AutomaticCommand] = []
+        command_names: set[str] = set()
+        for function in descriptor.functions:
+            command_id = function.id.replace("_", "-")
+            if command_id in command_names:
+                raise DeclarativeCliError(
+                    f"automatic CLI command name collision: {command_id}"
+                )
+            command_names.add(command_id)
+            for parameter in function.contract.parameters:
+                if parameter.kind in {
+                    inspect.Parameter.VAR_POSITIONAL,
+                    inspect.Parameter.VAR_KEYWORD,
+                }:
+                    raise DeclarativeCliError(
+                        f"function '{function.id}' uses unsupported variadic parameter "
+                        f"'{parameter.name}'"
+                    )
+                if parameter.projection != "exact":
+                    raise DeclarativeCliError(
+                        f"function '{function.id}' parameter '{parameter.name}' uses "
+                        "unsupported fallback_any projection"
+                    )
+            commands.append(_AutomaticCommand(command_id, function))
+        definition = descriptor.definition
+        return _AutomaticCli(
+            name=definition.id,
+            description=f"Automatic CLI for {definition.id}.",
+            commands=tuple(commands),
+        )
+
+    def _build_application_cli(
+        self,
+        cli: _AutomaticCli,
+        invoke: Callable[[str, Sequence[object], Mapping[str, object]], object],
+    ) -> typer.Typer:
+        if not callable(invoke):
+            raise DeclarativeCliError("automatic CLI invoke target must be callable")
+        application = typer.Typer(
+            name=cli.name,
+            help=cli.description,
+            add_completion=False,
+            no_args_is_help=True,
+            pretty_exceptions_enable=False,
+        )
+
+        @application.callback()
+        def automatic_root() -> None:
+            """Automatic application command group."""
+
+        for command in cli.commands:
+            callback = _automatic_callback(command, invoke)
+            application.command(
+                name=command.id,
+                help=command.descriptor.docstring or command.descriptor.id,
+            )(callback)
+        return application
+
     def _command_callback(self, command: _Command) -> Callable[..., None]:
         def callback(**values: object) -> None:
             result = self.datamodel.instantiate(command.model, values)
@@ -400,7 +518,161 @@ def _parameter(option: _Option) -> inspect.Parameter:
     )
 
 
-def _parse_boolean(value: str) -> bool:
+def _automatic_callback(
+    command: _AutomaticCommand,
+    invoke: Callable[[str, Sequence[object], Mapping[str, object]], object],
+) -> Callable[..., None]:
+    descriptor = command.descriptor
+
+    def callback(**values: object) -> None:
+        positional: list[object] = []
+        keyword: dict[str, object] = {}
+        for parameter in descriptor.contract.parameters:
+            value = values[parameter.name]
+            if parameter.kind is inspect.Parameter.POSITIONAL_ONLY:
+                positional.append(value)
+            else:
+                keyword[parameter.name] = value
+        output = invoke(descriptor.id, tuple(positional), keyword)
+        _write_automatic_output(descriptor.id, output)
+
+    callback.__name__ = f"automatic_{command.id.replace('-', '_')}"
+    callback.__doc__ = descriptor.docstring or descriptor.id
+    callback.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        parameters=tuple(
+            _automatic_parameter(parameter)
+            for parameter in descriptor.contract.parameters
+        )
+    )
+    return callback
+
+
+def _automatic_parameter(parameter) -> inspect.Parameter:
+    annotation = {
+        "string": str,
+        "integer": int,
+        "boolean": str,
+    }[parameter.element_type]
+    boolean_value = parameter.element_type == "boolean"
+    default_value = ... if parameter.required else parameter.default
+    if boolean_value and default_value is not ... and isinstance(default_value, bool):
+        default_value = "true" if default_value else "false"
+    default = typer.Option(
+        default_value,
+        f"--{parameter.name.replace('_', '-')}",
+        help=f"{parameter.name} ({parameter.element_type}).",
+        callback=_parse_boolean if boolean_value else None,
+        metavar="TRUE|FALSE" if boolean_value else None,
+    )
+    return inspect.Parameter(
+        parameter.name,
+        inspect.Parameter.KEYWORD_ONLY,
+        default=default,
+        annotation=annotation,
+    )
+
+
+def _write_automatic_output(function_id: str, output: object) -> None:
+    if output is None:
+        return
+    if isinstance(output, str):
+        typer.echo(output)
+        return
+    if isinstance(output, bool):
+        typer.echo("true" if output else "false")
+        return
+    if isinstance(output, int):
+        typer.echo(str(output))
+        return
+    if isinstance(output, (dict, list)):
+        try:
+            rendered = json.dumps(
+                output,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise DeclarativeCliError(
+                f"function '{function_id}' returned non-JSON-compatible output"
+            ) from exc
+        typer.echo(rendered)
+        return
+    raise DeclarativeCliError(
+        f"function '{function_id}' returned unsupported output type "
+        f"'{type(output).__name__}'"
+    )
+
+
+def _invoke_typer(application: typer.Typer, argv: Sequence[str]) -> int:
+    command = typer.main.get_command(application)
+    result = CliRunner().invoke(
+        command,
+        list(argv),
+        prog_name=application.info.name or "dix",
+        catch_exceptions=True,
+    )
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    if (
+        result.exception is not None
+        and not isinstance(result.exception, SystemExit)
+        and result.exit_code == 1
+    ):
+        print(f"Error: {result.exception}", file=sys.stderr)
+    return int(result.exit_code)
+
+
+def _describe_function_contract(
+    descriptor: ApplicationFunctionDescriptor,
+) -> Mapping[str, object]:
+    return {
+        "function": descriptor.id,
+        "async": descriptor.is_async,
+        "input_model": {
+            "uid": str(descriptor.contract.input_model.uid),
+            "name": descriptor.contract.input_model.name,
+            "version": descriptor.contract.input_model.version,
+        },
+        "parameters": [
+            {
+                "name": parameter.name,
+                "kind": parameter.kind.name,
+                "required": parameter.required,
+                "has_default": parameter.has_default,
+                "default": (
+                    parameter.default
+                    if parameter.has_default
+                    and isinstance(parameter.default, (str, int, bool, type(None)))
+                    else None
+                ),
+                "annotation": _annotation_text(parameter.annotation),
+                "element_type": parameter.element_type,
+                "projection": parameter.projection,
+            }
+            for parameter in descriptor.contract.parameters
+        ],
+        "output": {
+            "annotation": _annotation_text(descriptor.contract.output.annotation),
+            "element_type": descriptor.contract.output.element.type,
+            "projection": descriptor.contract.output.projection,
+        },
+    }
+
+
+def _annotation_text(annotation: object) -> str | None:
+    if annotation is inspect.Signature.empty:
+        return None
+    if isinstance(annotation, str):
+        return annotation
+    return getattr(annotation, "__name__", repr(annotation))
+
+
+def _parse_boolean(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
     normalized = value.strip().casefold()
     if normalized == "true":
         return True
