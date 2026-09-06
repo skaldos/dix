@@ -1,0 +1,17 @@
+[app]
+id = "runner"
+
+[compositions.host]
+use = "dix/core/app/host"
+
+[functions.describe_application]
+description = "Describe one already loaded target application."
+
+[functions.describe_function]
+description = "Describe one function of an already loaded target application."
+
+[functions.register_input_model]
+description = "Register a runner-scoped input model override."
+
+[functions.execute]
+description = "Execute one target function through an isolated one-shot instance."
