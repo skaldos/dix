@@ -128,6 +128,7 @@ def create_core_component_registry() -> ComponentRegistry:
     from .datamodel import DatamodelComponent
     from .element import ElementComponent
     from .module.component import ModuleComponent
+    from .norn import NornComponent
 
     registry = ComponentRegistry()
     registry.register_provider(
@@ -142,6 +143,15 @@ def create_core_component_registry() -> ComponentRegistry:
             id="datamodel",
             lifetime="composition",
             create=lambda scope: DatamodelComponent(
+                element=scope.require("element", ElementComponent)
+            ),
+        )
+    )
+    registry.register_provider(
+        ComponentProvider(
+            id="norn",
+            lifetime="composition",
+            create=lambda scope: NornComponent(
                 element=scope.require("element", ElementComponent)
             ),
         )

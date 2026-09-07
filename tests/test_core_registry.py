@@ -12,6 +12,7 @@ from dix.core import (
     DatamodelComponent,
     ElementComponent,
     ModuleComponent,
+    NornComponent,
     create_core_component_registry,
 )
 
@@ -105,13 +106,18 @@ def test_provider_dependencies_resolve_in_the_same_scope() -> None:
 
     first_model = first_scope.require("datamodel", DatamodelComponent)
     first_element = first_scope.require("element", ElementComponent)
+    first_norn = first_scope.require("norn", NornComponent)
     second_model = second_scope.require("datamodel", DatamodelComponent)
     second_element = second_scope.require("element", ElementComponent)
+    second_norn = second_scope.require("norn", NornComponent)
 
     assert first_model.element is first_element
+    assert first_norn.element is first_element
     assert second_model.element is second_element
+    assert second_norn.element is second_element
     assert first_model is not second_model
     assert first_element is not second_element
+    assert first_norn is not second_norn
 
 
 def test_direct_core_require_uses_one_stable_root_scope() -> None:
@@ -132,6 +138,7 @@ def test_runtime_control_components_are_shared_and_registered_explicitly() -> No
         "datamodel",
         "element",
         "module",
+        "norn",
     )
     first = registry.create_scope("first")
     second = registry.create_scope("second")
