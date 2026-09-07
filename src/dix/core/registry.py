@@ -168,7 +168,8 @@ def create_core_component_registry() -> ComponentRegistry:
             id="application",
             lifetime="runtime",
             create=lambda scope: ApplicationComponent(
-                compositions=scope.require("composition", CompositionComponent)
+                compositions=scope.require("composition", CompositionComponent),
+                components=registry,
             ),
         )
     )

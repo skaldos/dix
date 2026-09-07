@@ -4,6 +4,10 @@ import inspect
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
+from dix.core.contract import ContractDefinition, ContractReference
+from dix.core.element import ElementComponent
+from dix.core.function import FunctionDescriptor, bind_function, invoke_function
+
 from .models import (
     CompositionDefinition,
     CompositionFunctionDescriptor,
@@ -22,9 +26,11 @@ class CompositionApi:
         self,
         functions: Mapping[str, Callable[..., object]],
         descriptors: Mapping[str, CompositionFunctionDescriptor],
+        elements: ElementComponent,
     ) -> None:
         self._functions = MappingProxyType(dict(functions))
         self._descriptors = MappingProxyType(dict(descriptors))
+        self._elements = elements
 
     def require(self, function_id: str) -> Callable[..., object]:
         try:
@@ -44,6 +50,15 @@ class CompositionApi:
 
     def functions(self) -> tuple[CompositionFunctionDescriptor, ...]:
         return tuple(self._descriptors[item] for item in sorted(self._descriptors))
+
+    async def invoke(self, function_id: str, value: object) -> object:
+        descriptor = self.describe(function_id)
+        return await invoke_function(
+            descriptor.binding,
+            self.require(function_id),
+            value,
+            elements=self._elements,
+        )
 
     def __getattr__(self, function_id: str) -> Callable[..., object]:
         if function_id.startswith("_"):
@@ -75,9 +90,6 @@ def function_origins(
     definition: CompositionDefinition,
 ) -> dict[str, tuple[str, CompositionFunctionSpec | None]]:
     origins: dict[str, tuple[str, CompositionFunctionSpec | None]] = {}
-    for alias, dependency in definition.compositions.items():
-        for function_id in dependency.export:
-            origins[function_id] = (f"{alias}.{function_id}", None)
     for function_id, function in definition.functions.items():
         origins[function_id] = (function.export or "", function)
     return origins
@@ -86,11 +98,17 @@ def function_origins(
 def describe_runtime_functions(
     definition: CompositionDefinition,
     runtime_type: type[object],
+    contracts: Mapping[ContractReference, ContractDefinition],
 ) -> tuple[CompositionFunctionDescriptor, ...]:
     descriptors: list[CompositionFunctionDescriptor] = []
-    for function_id, (origin_value, _function_spec) in sorted(
+    for function_id, (origin_value, function_spec) in sorted(
         function_origins(definition).items()
     ):
+        if function_spec is None:
+            raise CompositionRuntimeError(
+                f"composition function requires an explicit contract: "
+                f"{definition.id}.{function_id}"
+            )
         raw_method = runtime_type.__dict__.get(function_id)
         if not inspect.isfunction(raw_method):
             raise CompositionRuntimeError(
@@ -105,16 +123,28 @@ def describe_runtime_functions(
             )
         public_signature = signature.replace(parameters=parameters[1:])
         origin = origin_value or None
+        try:
+            contract = contracts[function_spec.contract]
+        except KeyError as exc:
+            reference = function_spec.contract
+            raise CompositionRuntimeError(
+                f"composition function contract is not loaded: "
+                f"{definition.id}.{function_id} -> {reference.use}@{reference.version!r}"
+            ) from exc
+        function = FunctionDescriptor(
+            id=function_id,
+            owner_id=definition.id,
+            source="local_wrapper" if origin is not None else "local",
+            origin=origin,
+            signature=public_signature,
+            return_annotation=public_signature.return_annotation,
+            docstring=inspect.getdoc(raw_method),
+            is_async=inspect.iscoroutinefunction(raw_method),
+        )
         descriptors.append(
             CompositionFunctionDescriptor(
-                id=function_id,
-                owner_id=definition.id,
-                source="local_wrapper" if origin is not None else "local",
-                origin=origin,
-                signature=public_signature,
-                return_annotation=public_signature.return_annotation,
-                docstring=inspect.getdoc(raw_method),
-                is_async=inspect.iscoroutinefunction(raw_method),
+                **function.__dict__,
+                binding=bind_function(function, contract),
             )
         )
     return tuple(descriptors)
@@ -124,9 +154,9 @@ def create_api(
     definition: CompositionDefinition,
     runtime: object,
     dependencies: Mapping[str, CompositionApi],
-    descriptors: tuple[CompositionFunctionDescriptor, ...] | None = None,
+    descriptors: tuple[CompositionFunctionDescriptor, ...],
+    elements: ElementComponent,
 ) -> CompositionApi:
-    descriptors = descriptors or describe_runtime_functions(definition, type(runtime))
     functions: dict[str, Callable[..., object]] = {}
     for descriptor in descriptors:
         if descriptor.origin is not None:
@@ -147,4 +177,5 @@ def create_api(
     return CompositionApi(
         functions=functions,
         descriptors={item.id: item for item in descriptors},
+        elements=elements,
     )

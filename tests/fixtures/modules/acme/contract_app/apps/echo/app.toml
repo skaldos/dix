@@ -1,0 +1,13 @@
+[app]
+id = "echo"
+
+[compositions.worker]
+use = "acme/contract_app/echo"
+
+[functions.echo]
+description = "Expose the echo composition."
+export = "worker.echo"
+
+[functions.echo.contract]
+use = "acme/contract_app/echo"
+version = "1"

@@ -13,7 +13,10 @@ from dix.core.composition import (
     CompositionInstanceSpec,
 )
 from dix.core.composition.models import CompositionInstance, LoadedCompositionDefinition
+from dix.core.contract import ContractDefinition, ContractReference
+from dix.core.element import ElementComponent
 from dix.core.module.models import ModuleDescriptor
+from dix.core.registry import ComponentRegistry
 
 from .models import (
     ApplicationDefinition,
@@ -45,8 +48,13 @@ class ApplicationComponent:
 
     component_id = "application"
 
-    def __init__(self, compositions: CompositionComponent) -> None:
+    def __init__(
+        self,
+        compositions: CompositionComponent,
+        components: ComponentRegistry,
+    ) -> None:
         self._compositions = compositions
+        self._components = components
         self._import_namespace = uuid4().hex
         self._definitions: dict[str, LoadedApplicationDefinition] = {}
         self._instances: dict[tuple[str, str], ApplicationInstance] = {}
@@ -163,6 +171,9 @@ class ApplicationComponent:
         ) -> ApplicationInstance:
             loaded = self._require_loaded_definition(definition_id)
             definition = loaded.definition
+            component_scope = self._components.create_scope(
+                f"application:{owner_scope}:{instance_id}"
+            )
             composition_apis: dict[str, CompositionApi] = {}
             composition_instances: dict[str, CompositionInstance] = {}
             composition_owner = f"application:{owner_scope}:{instance_id}"
@@ -216,6 +227,7 @@ class ApplicationComponent:
                     composition_apis,
                     child_apis,
                     loaded.functions,
+                    component_scope.require("element", ElementComponent),
                 )
             except ApplicationRuntimeError:
                 raise
@@ -251,7 +263,7 @@ class ApplicationComponent:
             for scope_id, composition_id in reversed(created_compositions):
                 try:
                     self._compositions.destroy_instance(scope_id, composition_id)
-                except Exception as rollback_error:
+                except Exception as rollback_error:  # noqa: BLE001 - aggregate rollback failures
                     rollback_errors.append(rollback_error)
             suffix = ""
             if rollback_errors:
@@ -322,6 +334,7 @@ class ApplicationComponent:
         *,
         artifact_digest: str,
         module: ModuleDescriptor,
+        contracts: Mapping[ContractReference, ContractDefinition],
     ) -> dict[str, LoadedApplicationDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedApplicationDefinition] = {}
@@ -334,7 +347,7 @@ class ApplicationComponent:
             for definition, runtime_type, module_name in runtimes:
                 aliases = (*sorted(definition.compositions), *sorted(definition.applications))
                 validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(definition, runtime_type)
+                functions = describe_runtime_functions(definition, runtime_type, contracts)
                 staged[definition.id] = LoadedApplicationDefinition(
                     definition=definition,
                     runtime_type=runtime_type,

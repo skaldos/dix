@@ -7,7 +7,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from dix.core.composition.models import CompositionDependencySpec
-from dix.core.function import FunctionDescriptor
+from dix.core.contract import ContractReference
+from dix.core.function import FunctionBinding, FunctionDescriptor
 
 if TYPE_CHECKING:
     from dix.core.composition.models import CompositionInstance
@@ -24,15 +25,14 @@ def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 class ApplicationDependencySpec:
     use: str
     config: Mapping[str, Any] = field(default_factory=dict)
-    export: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", _immutable_mapping(self.config))
-        object.__setattr__(self, "export", tuple(self.export))
 
 
 @dataclass(frozen=True)
 class ApplicationFunctionSpec:
+    contract: ContractReference
     description: str | None = None
     export: str | None = None
 
@@ -98,6 +98,8 @@ class ApplicationDependencyGraph:
 
 @dataclass(frozen=True)
 class ApplicationFunctionDescriptor(FunctionDescriptor):
+    binding: FunctionBinding = field(kw_only=True)
+
     @property
     def application_id(self) -> str:
         return self.owner_id

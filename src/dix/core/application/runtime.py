@@ -5,6 +5,10 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from dix.core.contract import ContractDefinition, ContractReference
+from dix.core.element import ElementComponent
+from dix.core.function import FunctionDescriptor, bind_function, invoke_function
+
 from .models import (
     ApplicationDefinition,
     ApplicationFunctionDescriptor,
@@ -25,9 +29,11 @@ class ApplicationApi:
         self,
         functions: Mapping[str, Callable[..., object]],
         descriptors: Mapping[str, ApplicationFunctionDescriptor],
+        elements: ElementComponent,
     ) -> None:
         self._functions = MappingProxyType(dict(functions))
         self._descriptors = MappingProxyType(dict(descriptors))
+        self._elements = elements
 
     def require(self, function_id: str) -> Callable[..., object]:
         try:
@@ -47,6 +53,15 @@ class ApplicationApi:
 
     def functions(self) -> tuple[ApplicationFunctionDescriptor, ...]:
         return tuple(self._descriptors[item] for item in sorted(self._descriptors))
+
+    async def invoke(self, function_id: str, value: object) -> object:
+        descriptor = self.describe(function_id)
+        return await invoke_function(
+            descriptor.binding,
+            self.require(function_id),
+            value,
+            elements=self._elements,
+        )
 
     def __getattr__(self, function_id: str) -> Callable[..., object]:
         if function_id.startswith("_"):
@@ -77,12 +92,6 @@ def validate_runtime_constructor(runtime_type: type[object], aliases: tuple[str,
 
 def function_origins(definition: ApplicationDefinition) -> Mapping[str, str | None]:
     origins: dict[str, str | None] = {}
-    for alias, dependency in definition.compositions.items():
-        for function_id in dependency.export:
-            origins[function_id] = f"{alias}.{function_id}"
-    for alias, dependency in definition.applications.items():
-        for function_id in dependency.export:
-            origins[function_id] = f"{alias}.{function_id}"
     for function_id, function in definition.functions.items():
         origins[function_id] = function.export
     return origins
@@ -91,6 +100,7 @@ def function_origins(definition: ApplicationDefinition) -> Mapping[str, str | No
 def describe_runtime_functions(
     definition: ApplicationDefinition,
     runtime_type: type[object],
+    contracts: Mapping[ContractReference, ContractDefinition],
 ) -> tuple[ApplicationFunctionDescriptor, ...]:
     """Describe only functions declared by the application spec."""
     origins = function_origins(definition)
@@ -110,16 +120,34 @@ def describe_runtime_functions(
             )
         public_signature = signature.replace(parameters=parameters[1:])
         origin = origins[function_id]
+        function_spec = definition.functions.get(function_id)
+        if function_spec is None:
+            raise ApplicationRuntimeError(
+                f"application function requires an explicit contract: "
+                f"{definition.id}.{function_id}"
+            )
+        try:
+            contract = contracts[function_spec.contract]
+        except KeyError as exc:
+            reference = function_spec.contract
+            raise ApplicationRuntimeError(
+                f"application function contract is not loaded: "
+                f"{definition.id}.{function_id} -> {reference.use}@{reference.version!r}"
+            ) from exc
+        descriptor = FunctionDescriptor(
+            id=function_id,
+            owner_id=definition.id,
+            source="local_wrapper" if origin is not None else "local",
+            origin=origin,
+            signature=public_signature,
+            return_annotation=public_signature.return_annotation,
+            docstring=inspect.getdoc(function),
+            is_async=inspect.iscoroutinefunction(function),
+        )
         descriptors.append(
             ApplicationFunctionDescriptor(
-                id=function_id,
-                owner_id=definition.id,
-                source="local_wrapper" if origin is not None else "local",
-                origin=origin,
-                signature=public_signature,
-                return_annotation=public_signature.return_annotation,
-                docstring=inspect.getdoc(function),
-                is_async=inspect.iscoroutinefunction(function),
+                **descriptor.__dict__,
+                binding=bind_function(descriptor, contract),
             )
         )
     return tuple(descriptors)
@@ -130,9 +158,9 @@ def create_api(
     runtime: object,
     composition_dependencies: Mapping[str, CompositionApi],
     application_dependencies: Mapping[str, ApplicationApi],
-    descriptors: tuple[ApplicationFunctionDescriptor, ...] | None = None,
+    descriptors: tuple[ApplicationFunctionDescriptor, ...],
+    elements: ElementComponent,
 ) -> ApplicationApi:
-    descriptors = descriptors or describe_runtime_functions(definition, type(runtime))
     dependencies = {**composition_dependencies, **application_dependencies}
     functions: dict[str, Callable[..., object]] = {}
     for descriptor in descriptors:
@@ -154,4 +182,5 @@ def create_api(
     return ApplicationApi(
         functions=functions,
         descriptors={item.id: item for item in descriptors},
+        elements=elements,
     )

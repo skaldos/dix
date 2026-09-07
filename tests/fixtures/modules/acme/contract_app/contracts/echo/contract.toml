@@ -1,0 +1,9 @@
+[contract]
+id = "echo"
+version = "1"
+
+[input]
+type = "string"
+
+[output]
+type = "string"

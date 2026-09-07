@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from dix.core.contract import ContractDefinition, ContractReference
+from dix.core.element import ElementComponent
 from dix.core.registry import ComponentRegistry
 
 from .models import (
@@ -59,6 +61,7 @@ class CompositionComponent:
         *,
         artifact_digest: str,
         module: ModuleDescriptor,
+        contracts: Mapping[ContractReference, ContractDefinition],
     ) -> dict[str, LoadedCompositionDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedCompositionDefinition] = {}
@@ -71,7 +74,7 @@ class CompositionComponent:
             for definition, runtime_type, module_name in runtimes:
                 aliases = (*sorted(definition.components), *sorted(definition.compositions))
                 validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(definition, runtime_type)
+                functions = describe_runtime_functions(definition, runtime_type, contracts)
                 staged[definition.id] = LoadedCompositionDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
@@ -265,6 +268,7 @@ class CompositionComponent:
                     runtime,
                     child_apis,
                     loaded_definition.functions,
+                    component_scope.require("element", ElementComponent),
                 )
             except CompositionRuntimeError:
                 raise

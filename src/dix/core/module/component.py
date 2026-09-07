@@ -103,15 +103,24 @@ class ModuleComponent:
         published_applications = False
         published_contracts = False
         try:
+            available_contracts = {
+                **self._contracts,
+                **{
+                    definition.reference: definition
+                    for definition in inspection.contract_definitions
+                },
+            }
             staged_compositions = self._compositions._stage_definitions(
                 inspection.composition_definitions,
                 artifact_digest=inspection.artifact_digest,
                 module=descriptor,
+                contracts=available_contracts,
             )
             staged_applications = self._applications._stage_definitions(
                 inspection.application_definitions,
                 artifact_digest=inspection.artifact_digest,
                 module=descriptor,
+                contracts=available_contracts,
             )
             self._compositions._validate_staged_definitions(staged_compositions)
             self._applications._validate_staged_definitions(
@@ -161,7 +170,30 @@ class ModuleComponent:
         loaded = self.require_module(module_id)
         composition_ids = set(loaded.compositions)
         application_ids = set(loaded.applications)
+        contract_references = set(loaded.contracts)
+        contract_blockers: list[str] = []
+        for definition in self._compositions._definitions.values():
+            if definition.definition.id in composition_ids:
+                continue
+            for function in definition.functions:
+                if function.binding.contract.reference in contract_references:
+                    contract_blockers.append(
+                        f"loaded composition function '{definition.definition.id}."
+                        f"{function.id}' requires contract "
+                        f"'{function.binding.contract.id}' from module '{module_id}'"
+                    )
+        for definition in self._applications._definitions.values():
+            if definition.definition.id in application_ids:
+                continue
+            for function in definition.functions:
+                if function.binding.contract.reference in contract_references:
+                    contract_blockers.append(
+                        f"loaded application function '{definition.definition.id}."
+                        f"{function.id}' requires contract "
+                        f"'{function.binding.contract.id}' from module '{module_id}'"
+                    )
         blockers = (
+            *contract_blockers,
             *self._compositions._unload_blockers(module_id, composition_ids),
             *self._applications._unload_blockers(
                 module_id,

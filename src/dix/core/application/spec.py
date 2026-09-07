@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from dix.core.composition.models import CompositionDependencySpec
+from dix.core.contract import ContractReference
 from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import (
     canonical_file,
@@ -95,7 +96,6 @@ def inspect_application_source(path: Path) -> ApplicationSource:
         )
     dependencies = {**compositions, **applications}
     functions = _parse_functions(raw.get("functions", {}), dependencies)
-    _validate_function_names(compositions, applications, functions)
     return ApplicationSource(
         local_id=local_id,
         module_root=module_root,
@@ -132,7 +132,7 @@ def _parse_dependencies(
         _validate_alias(alias, f"{dependency_type} alias")
         label = f"{table_name}.{alias}"
         dependency = _require_mapping(raw_dependency, label)
-        _reject_unknown_keys(dependency, {"use", "config", "export"}, label)
+        _reject_unknown_keys(dependency, {"use", "config"}, label)
         raw_use = _require_string(dependency.get("use"), f"{label}.use")
         use = (
             _normalize_effective_composition_id(raw_use)
@@ -140,29 +140,13 @@ def _parse_dependencies(
             else normalize_effective_application_id(raw_use)
         )
         config = _require_mapping(dependency.get("config", {}), f"{label}.config")
-        exports = _parse_exports(dependency.get("export", []), label)
         dependency_class = (
             CompositionDependencySpec
             if dependency_type == "composition"
             else ApplicationDependencySpec
         )
-        result[alias] = dependency_class(use=use, config=config, export=exports)
+        result[alias] = dependency_class(use=use, config=config)
     return dict(sorted(result.items()))
-
-
-def _parse_exports(raw: object, label: str) -> tuple[str, ...]:
-    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
-        raise ApplicationSpecError(f"{label}.export must be a list of strings")
-    exports: list[str] = []
-    for raw_export in raw:
-        function_id = _validate_function_id(raw_export, f"{label}.export")
-        if function_id in exports:
-            raise ApplicationSpecError(
-                f"duplicate export from dependency alias '{label.rsplit('.', 1)[-1]}': "
-                f"{function_id}"
-            )
-        exports.append(function_id)
-    return tuple(exports)
 
 
 def _parse_functions(
@@ -174,7 +158,12 @@ def _parse_functions(
     for function_id, raw_function in table.items():
         _validate_function_id(function_id, "function id")
         value = _require_mapping(raw_function, f"functions.{function_id}")
-        _reject_unknown_keys(value, {"description", "export"}, f"functions.{function_id}")
+        _reject_unknown_keys(
+            value, {"contract", "description", "export"}, f"functions.{function_id}"
+        )
+        contract = _parse_contract_reference(
+            value.get("contract"), f"functions.{function_id}.contract"
+        )
         description = value.get("description")
         if description is not None:
             description = _require_string(description, f"functions.{function_id}.description")
@@ -188,37 +177,24 @@ def _parse_functions(
                 )
             _validate_function_id(parts[1], f"functions.{function_id}.export")
         result[function_id] = ApplicationFunctionSpec(
+            contract=contract,
             description=description,
             export=origin,
         )
     return dict(sorted(result.items()))
 
 
-def _validate_function_names(
-    compositions: Mapping[str, CompositionDependencySpec],
-    applications: Mapping[str, ApplicationDependencySpec],
-    functions: Mapping[str, ApplicationFunctionSpec],
-) -> None:
-    owners: dict[str, str] = {}
-    for table_name, dependencies in (
-        ("compositions", compositions),
-        ("apps", applications),
-    ):
-        for alias, dependency in dependencies.items():
-            for function_id in dependency.export:
-                owner = f"{table_name}.{alias}.export"
-                previous = owners.setdefault(function_id, owner)
-                if previous != owner:
-                    raise ApplicationSpecError(
-                        f"duplicate effective function '{function_id}' from {previous} and {owner}"
-                    )
-    for function_id in functions:
-        if function_id in owners:
-            raise ApplicationSpecError(
-                f"duplicate effective function '{function_id}' from {owners[function_id]} "
-                f"and functions.{function_id}"
-            )
-        owners[function_id] = f"functions.{function_id}"
+def _parse_contract_reference(raw: object, label: str) -> ContractReference:
+    value = _require_mapping(raw, label)
+    _reject_unknown_keys(value, {"use", "version"}, label)
+    use = _require_string(value.get("use"), f"{label}.use")
+    version = value.get("version")
+    if version is not None:
+        version = _require_string(version, f"{label}.version")
+    try:
+        return ContractReference(use=use, version=version)
+    except ValueError as exc:
+        raise ApplicationSpecError(f"invalid {label}: {exc}") from exc
 
 
 def _normalize_effective_composition_id(composition_id: str) -> str:

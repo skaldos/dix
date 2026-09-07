@@ -1,11 +1,20 @@
 """Inspectable composition definitions and structural module discovery."""
 
+from dix.core.module import (
+    ModuleDescriptor,
+    ModuleInspection,
+    discover_modules,
+    inspect_module,
+    normalize_module_id,
+)
+
+from .component import CompositionComponent, CompositionComponentError
 from .models import (
     CompositionDefinition,
-    CompositionDescriptor,
     CompositionDependencyEdge,
     CompositionDependencyGraph,
     CompositionDependencySpec,
+    CompositionDescriptor,
     CompositionFunctionDescriptor,
     CompositionFunctionSpec,
     CompositionInstance,
@@ -15,14 +24,6 @@ from .models import (
     LoadedCompositionDefinition,
 )
 from .runtime import CompositionApi, CompositionRuntimeError
-from .component import CompositionComponent, CompositionComponentError
-from dix.core.module import (
-    ModuleDescriptor,
-    ModuleInspection,
-    discover_modules,
-    inspect_module,
-    normalize_module_id,
-)
 from .spec import (
     CompositionSpecError,
     inspect_composition_source,
@@ -36,12 +37,12 @@ __all__ = [
     "CompositionComponent",
     "CompositionComponentError",
     "CompositionDefinition",
-    "CompositionDescriptor",
     "CompositionDependencyEdge",
     "CompositionDependencyGraph",
     "CompositionDependencySpec",
-    "CompositionFunctionSpec",
+    "CompositionDescriptor",
     "CompositionFunctionDescriptor",
+    "CompositionFunctionSpec",
     "CompositionInstance",
     "CompositionInstanceSpec",
     "CompositionRuntimeContext",
@@ -52,8 +53,8 @@ __all__ = [
     "ModuleDescriptor",
     "ModuleInspection",
     "discover_modules",
-    "inspect_module",
     "inspect_composition_source",
+    "inspect_module",
     "inspect_spec",
     "normalize_effective_composition_id",
     "normalize_local_id",
