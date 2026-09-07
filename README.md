@@ -2,259 +2,149 @@
 
 Declarative Interface eXecutor.
 
-`dix` provides narrow core capabilities plus trusted, in-process Python compositions and
-applications. The current foundation proves five independent end-to-end paths:
+`dix` is currently an architecture-stage Python runtime core. Its stable pressure-tested path is:
 
 ```text
-UI element state/functions -> UI component -> interface -> API -> optional renderer
-trusted module root -> composition spec -> isolated composition graph -> local function API
-component -> composition -> application -> child application -> local function API
-loaded app -> automatic function contract -> one-shot runner -> generated Typer CLI
-model elements -> Norn strand contract -> application knot -> strand-driven Typer CLI
+code-free contract
+-> module-owned contract registry
+-> explicit Python function binding
+-> composition
+-> application
+-> contract-checked invocation
 ```
 
-The project intentionally does **not** include business-specific provisioning logic, AD/LDAP/OIDC,
-PDF generation, a workflow engine, package management, remote plugin admission, or process isolation.
+The repository is intentionally not claiming a production runner, transport, UI, authorization
+model, process sandbox, package manager, or lifecycle convention yet.
 
-## Concepts
+## Current core
 
-- **Declarative interface**: the existing HTTP/renderer-oriented control surface. It explicitly binds
-  selected composition functions or UI components; loading an application does not add such a surface.
-- **Core component**: a narrow internal capability. `element` handles atomic native Python values;
-  `datamodel` handles schemas; `composition`, `application`, and `module` own their respective runtime
-  registries and delivery transaction.
-- **Module**: a trusted delivery and dependency bundle below a configured root. Its relative path is its
-  current ID. It may contain compositions, applications, or both; there is no `module.toml`.
-- **Composition definition**: a static `composition.toml` plus the fixed `runtime.py:Runtime` entrypoint.
-- **Composition instance**: one isolated runtime graph. Each node receives local composition-scoped
-  components; runtime-scoped control components are explicitly shared.
-- **Composition API**: only functions declared by the spec and implemented as local runtime methods.
-  Adopted dependency functions remain real local wrappers with inspectable origins and signatures.
-- **Application definition**: a static `app.toml` plus `runtime.py:Runtime`. It may depend only on
-  compositions and applications, never directly on core components.
-- **Application instance**: one owner-scoped recursive graph with private child-application and
-  composition graphs. Construction and structural destruction are explicit Core operations; behavior
-  runs only through declared functions.
-- **Application API**: the declared local function surface used by parent applications and direct Python
-  consumers. It is not automatically exposed through HTTP, sockets, or CLI calls.
-- **Function contract**: an immutable projection of each declared runtime function's real Python
-  signature into a local input datamodel and output element contract. Projection does not validate
-  ordinary direct API calls and does not mutate a global model registry.
-- **Norn**: a composition-scoped Core component that registers typed input/output `Strand`
-  contracts and binds them explicitly to local handlers. Norn does not provide transport,
-  persistence, discovery, authorization, or execution isolation.
-- **Strand**: one named directional contract whose input and output are elements. A private model
-  element lets a whole datamodel form either end without coupling Norn to global model state.
-- **Knot**: a composition role that binds one or more strands to concrete local behavior. The
-  included application knot projects loaded application function contracts into strands and keeps
-  target execution one-shot and owner-scoped.
-- **Renderer**: a presentation adapter. The included HTML/Jinja/HTMX renderer is optional and consumes
-  the same interface model under `/render`.
+- **Element** defines extensible processors for native Python value types.
+- **Datamodel** combines elements into named structured models.
+- **Norn** registers directional input/output strands and binds them to local handlers.
+- **Contract** is a code-free module artifact backed by one Norn strand definition.
+- **Function binding** connects exactly one declared Python function to exactly one contract.
+- **Composition** combines core components and other compositions in an isolated instance graph.
+- **Application** combines compositions and other applications into a callable local boundary.
+- **Module** inspects, stages, publishes, and unloads contracts, compositions, and applications as
+  one transaction.
 
-Python code loaded from a trusted module runs in-process and is not sandboxed. Registry publication is
-atomic, but arbitrary Python import side effects cannot be rolled back.
+Python loaded from a trusted module executes in-process. Atomic registry publication does not make
+arbitrary Python imports safe and cannot undo import side effects.
+
+## Repository maturity boundary
+
+```text
+src/dix/core/            current core implementation
+tests/                   stable core regression
+tests/fixtures/modules/  synthetic test modules; never packaged
+examples/modules/        future durable teaching examples
+unstable/modules/        preserved module experiments
+unstable/tools/          pressure and authoring experiments
+unstable/tests/          historical regression evidence for replaced surfaces
+```
+
+`src/dix` and future stable modules must never import from `unstable`. The `unstable` tree is used
+only through explicit development paths and is excluded from wheels.
 
 ## Module layout
 
 ```text
-<trusted-root>/
-  <module-id>/
-    compositions/
-      <local-composition-id>/{composition.toml,runtime.py}
-    apps/
-      <local-application-id>/{app.toml,runtime.py}
+<trusted-root>/<module-id>/
+  contracts/<local-id>/contract.toml
+  compositions/<local-id>/{composition.toml,runtime.py}
+  apps/<local-id>/{app.toml,runtime.py}
 ```
 
-The included examples are:
+A module may contain any non-empty combination of these artifact families. No `module.toml` is
+required.
 
-```text
-unstable/modules/dix/examples/files/
-  compositions/datamodel_files/{composition.toml,runtime.py}
+### Contract
 
-examples/modules/acme/demo/
-  compositions/{value_source,formatter}/...
-  apps/{base,child}/...
+```toml
+[contract]
+id = "echo"
+version = "1"
+
+[input]
+type = "string"
+
+[output]
+type = "string"
 ```
 
-The files example's effective composition ID is `dix/examples/files/datamodel_files`.
+Contracts are authoritative. Runtime code never generates, mutates, or completes them. A missing
+version means exactly `version = None`; it does not mean `latest`.
 
-## Configuration
-
-Generate a local config and inspect its effective sources:
-
-```bash
-uv run dix config init
-uv run dix config effective
-uv run dix config explain composition
-```
-
-Composition configuration is anchored to the file that defines it; relative paths never use the
-process working directory implicitly:
+### Composition function
 
 ```toml
 [composition]
-trusted_module_roots = ["examples/modules"]
+id = "echo"
 
-[[composition.instance]]
-id = "optional_startup"
-use = "acme/runtime/worker"
-startup = true
+[functions.echo]
+description = "Echo one string."
 
-[composition.instance.config]
-source = "data/input.json"
+[functions.echo.contract]
+use = "acme/contract_app/echo"
+version = "1"
 ```
 
-## Development quickstart
+```python
+class Runtime:
+    def __init__(self, *, context, config):
+        self.context = context
+        self.config = config
+
+    def echo(self, value):
+        return value
+```
+
+The first binding slice accepts exactly one non-variadic function parameter. Internal runtime
+methods not declared under `[functions]` remain private implementation details and need no contract.
+
+### Application re-export
+
+Dependencies do not implicitly export functions. The application declares its local wrapper,
+origin, and contract explicitly:
+
+```toml
+[app]
+id = "echo"
+
+[compositions.worker]
+use = "acme/contract_app/echo"
+
+[functions.echo]
+export = "worker.echo"
+
+[functions.echo.contract]
+use = "acme/contract_app/echo"
+version = "1"
+```
+
+## Development verification
 
 ```bash
 uv run --extra dev pytest
-uv run python -m compileall -q src tests
-uv run dix --help
-uv run dix module list --json
-uv run dix composition list --json
-uv run dix composition functions dix/examples/files/datamodel_files --json
-uv run dix app list --json
-uv run dix app show acme/demo/child --json
-uv run dix app graph acme/demo/child --json
+uv run python -m compileall -q src tests unstable examples
+uv run python unstable/tools/pressure/run_contract_application.py
+uv build --wheel
+unzip -l dist/*.whl
 ```
 
-Start the demo server:
+The pressure script proves contract inspection, atomic module loading, composition/application
+binding, checked invocation, invalid-input rejection, live-instance unload blocking, teardown, and
+final unload without a CLI, HTTP service, or generic runner.
 
-```bash
-uv run dix serve
-```
+## Explicit non-goals of this slice
 
-Open:
+- generic application execution or daemon hosting;
+- CLI/Typer projection;
+- HTTP, RPC, IPC, renderer, or ROBA integration;
+- sandbox and authorization policy;
+- contract/code generation or AST inspection;
+- automatic version resolution;
+- multiple or optional function parameters;
+- datamodel-shaped function input.
 
-```text
-http://127.0.0.1:8000/render/demo_request
-http://127.0.0.1:8000/api/interfaces/demo_request/model
-http://127.0.0.1:8000/api/interfaces/demo_datamodel/functions/run
-```
-
-## CLI
-
-```bash
-dix module new --id my/new_stuff --root ./modules
-dix module list [--json]
-dix module show <module-id> [--json]
-dix module inspect <path> --id <module-id> [--json]
-dix module graph <module-id> [--json]
-
-dix composition list [--json]
-dix composition show <composition-id> [--json]
-dix composition functions <composition-id> [--json]
-dix composition instance list [--json]
-
-dix composition new \
-  --module ./modules/my/new_stuff \
-  --id processor \
-  --component model=datamodel \
-  --composition base=dix/examples/files/datamodel_files \
-  --export base.load_data \
-  --function local_value
-
-dix composition generate \
-  ./modules/my/new_stuff/compositions/processor/composition.toml
-
-dix app list [--json]
-dix app show <application-id> [--json]
-dix app functions <application-id> [--json]
-dix app graph <application-id> [--json]
-
-dix app new \
-  --module ./modules/my/new_stuff \
-  --id child \
-  --composition formatter=acme/demo/formatter \
-  --app base=acme/demo/base \
-  --export base.render \
-  --function local_value
-
-dix app generate \
-  ./modules/my/new_stuff/apps/child/app.toml
-```
-
-Scaffolding and generation never overwrite existing files. The generators obtain dependency signatures
-from live runtime code below configured trusted roots; signatures are not copied into TOML specs.
-Build-time dependency resolution is artifact-granular, so a runtime can be generated while its target
-module bundle is still incomplete. Normal runtime loading remains atomic across every composition and
-application in a module. Generation imports referenced dependency runtimes and therefore executes
-trusted Python module code; configure trusted module roots accordingly.
-
-## Direct Python smoke
-
-```python
-from pathlib import Path
-from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
-from dix.core.application import ApplicationInstanceSpec
-
-root = Path.cwd()
-registry = create_core_component_registry()
-modules = registry.require("module", ModuleComponent)
-applications = registry.require("application", ApplicationComponent)
-modules.load_module(
-    root / "examples/modules/acme/demo",
-    module_id="acme/demo",
-)
-instance = applications.create_instance(
-    ApplicationInstanceSpec(
-        id="demo",
-        use="acme/demo/child",
-        config={},
-        config_base_dir=root,
-    ),
-    owner_scope_id="shell",
-)
-assert instance.api.render("input") == "formatted<value:input>"
-applications.destroy_instance("shell", "demo")
-```
-
-## Included demos
-
-`examples/interfaces/demo_request.toml` exercises the renderer-oriented `input` and `select` UI
-components. `examples/interfaces/demo_datamodel.toml` binds the trusted `datamodel_files` composition.
-Its local integer wrapper turns the JSON string `"42"` into an integer without changing any other
-composition-local datamodel instance. The interface exposes only the explicit, side-effect-free `run`
-adapter and reuses one stable root graph across repeated GET requests.
-
-`examples/modules/acme/demo` is a transport-free application pressure test. `child.render` is a real
-local wrapper around `base.render`, which calls both example compositions. The automated E2E test
-verifies structural construction rollback, root-graph isolation, generator output, and complete
-teardown. Load, create, and destroy do not invoke declared functions implicitly.
-
-`unstable/modules/dix/core/cli` provides the first-party declarative Typer adapter as an ordinary
-composition. `examples/modules/acme/cli_demo` combines it with a transport-independent tool
-application through an explicit local target allowlist. Run the complete visible lifecycle-neutral
-path with
-`uv run python examples/run_cli_demo.py text render --value hello --count 2 --upper true`.
-
-The same tool can be projected automatically without reading its `cli.toml`, its explicit model, or
-target-specific glue. `dix/core/app/runner` creates the target one-shot, validates through its local
-datamodel scope, awaits async results, and always destroys the target graph. The `dix/core/cli/auto`
-application connects that runner to Typer:
-
-```bash
-uv run python examples/run_auto_cli.py \
-  acme/cli_demo/tool \
-  render --value hello --count 2 --upper true
-```
-
-`dix/core/knot` projects those same application functions through Norn instead of exposing the
-application runner contract directly. `dix/core/strand_cli` then consumes only the bound strand
-descriptors and calls. This pressure-tests the generic data-delivery boundary while keeping Typer an
-ordinary adapter:
-
-```bash
-uv run python examples/run_strand_cli.py \
-  acme/cli_demo/tool \
-  render --value hello --count 2 --upper true
-```
-
-This proves only an in-process, already-loaded application path. Module/config discovery, daemon
-hosting, remote transports, authorization, sandbox policy, and richer CLI metadata remain separate
-future layers. Long-running applications can later be represented through explicit app/host
-functions; the primitive core intentionally has no universal lifecycle hook.
-
-RPC, IPC, ROBA integration, process isolation, authentication, application startup management, and a
-remote application call surface are deliberately not implemented. They are possible future stacks over
-components, compositions, and applications—not implicit behavior of the current runtime.
+Those are higher layers over the proven boundary, not hidden behavior in the current core.

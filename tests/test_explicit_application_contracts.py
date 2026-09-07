@@ -50,6 +50,11 @@ def test_contract_composition_application_invocation() -> None:
     assert instance.runtime.internal() == "not exposed"
     with pytest.raises(Exception, match="input is incompatible"):
         asyncio.run(instance.api.invoke("echo", 42))
+    with pytest.raises(ModuleComponentError, match="cannot be unloaded while it is in use"):
+        modules.unload_module("acme/contract_app")
+    applications.destroy_instance("test", "echo")
+    modules.unload_module("acme/contract_app")
+    assert modules.modules() == ()
 
 
 def test_missing_contract_reference_fails_before_publication(tmp_path: Path) -> None:
@@ -131,3 +136,31 @@ def test_contract_module_cannot_unload_while_foreign_function_uses_it(
     modules.unload_module("acme/consumer")
     modules.unload_module("acme/contracts")
     assert modules.modules() == ()
+
+
+def test_incompatible_function_shape_rolls_back_contract_and_code(tmp_path: Path) -> None:
+    module = tmp_path / "bad-shape"
+    contract = module / "contracts" / "echo"
+    contract.mkdir(parents=True)
+    (contract / "contract.toml").write_text(
+        '[contract]\nid = "echo"\n'
+        '[input]\ntype = "string"\n[output]\ntype = "string"\n'
+    )
+    composition = module / "compositions" / "echo"
+    composition.mkdir(parents=True)
+    (composition / "composition.toml").write_text(
+        '[composition]\nid = "echo"\n[functions.echo]\n'
+        '[functions.echo.contract]\nuse = "acme/bad_shape/echo"\n'
+    )
+    (composition / "runtime.py").write_text(
+        "class Runtime:\n"
+        "    def __init__(self, *, context, config): pass\n"
+        "    def echo(self): return 'invalid'\n"
+    )
+    modules, compositions, _ = components()
+
+    with pytest.raises(ModuleComponentError, match="must accept exactly one parameter"):
+        modules.load_module(module, module_id="acme/bad_shape")
+    assert modules.modules() == ()
+    assert modules.contracts() == ()
+    assert compositions.definitions() == ()
