@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from dix.cli import main
+from unstable.tools.dix_cli.cli import main
 
 
 def write_composition(module: Path, local_id: str, body: str, runtime: str) -> None:

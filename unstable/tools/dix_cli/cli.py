@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .config import load_effective_config, write_default_config
+from dix.config import load_effective_config, write_default_config
 
 
 def _json_print(value: Any) -> None:
@@ -55,15 +55,15 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def _composition_runtime():
-    from .assembly import assemble_compositions
+    from dix.assembly import assemble_compositions
 
     effective = load_effective_config()
     return assemble_compositions(effective.composition).compositions
 
 
 def _application_runtime():
-    from .assembly import assemble_compositions
-    from .core import ApplicationComponent
+    from dix.assembly import assemble_compositions
+    from dix.core import ApplicationComponent
 
     effective = load_effective_config()
     assembly = assemble_compositions(effective.composition)
@@ -71,7 +71,7 @@ def _application_runtime():
 
 
 def _module_runtime():
-    from .assembly import assemble_compositions
+    from dix.assembly import assemble_compositions
 
     effective = load_effective_config()
     return assemble_compositions(effective.composition)
@@ -216,14 +216,14 @@ def _emit_rows(rows: list[dict[str, Any]], *, json_output: bool, empty: str) -> 
 
 
 def cmd_module(args: argparse.Namespace) -> int:
-    from .compositions.scaffold import create_module_scaffold
+    from unstable.tools.composition_authoring.scaffold import create_module_scaffold
 
     if args.module_cmd == "new":
         target = create_module_scaffold(Path(args.root), args.id)
         print(f"created: {target}")
         return 0
     if args.module_cmd == "inspect":
-        from .core import ModuleComponent, create_core_component_registry
+        from dix.core import ModuleComponent, create_core_component_registry
 
         registry = create_core_component_registry()
         component = registry.require("module", ModuleComponent)
@@ -251,7 +251,7 @@ def cmd_module(args: argparse.Namespace) -> int:
     assembly = _module_runtime()
     modules = assembly.modules
     compositions = assembly.compositions
-    from .core import ApplicationComponent
+    from dix.core import ApplicationComponent
 
     applications = assembly.components.require("application", ApplicationComponent)
     if args.module_cmd == "list":
@@ -331,11 +331,11 @@ def cmd_module(args: argparse.Namespace) -> int:
 
 
 def cmd_composition(args: argparse.Namespace) -> int:
-    from .compositions.scaffold import create_composition_scaffold
+    from unstable.tools.composition_authoring.scaffold import create_composition_scaffold
 
     if args.composition_cmd == "generate":
-        from .compositions.generator import generate_runtime
-        from .compositions.resolver import TrustedBuildFunctionResolver
+        from unstable.tools.composition_authoring.generator import generate_runtime
+        from unstable.tools.composition_authoring.resolver import TrustedBuildFunctionResolver
 
         effective = load_effective_config()
         with TrustedBuildFunctionResolver(effective.composition.trusted_module_roots) as resolver:
@@ -421,11 +421,11 @@ def cmd_composition(args: argparse.Namespace) -> int:
 
 
 def cmd_application(args: argparse.Namespace) -> int:
-    from .applications.scaffold import create_application_scaffold
+    from unstable.tools.application_authoring.scaffold import create_application_scaffold
 
     if args.application_cmd == "generate":
-        from .applications.generator import generate_runtime
-        from .applications.resolver import TrustedBuildApplicationResolver
+        from unstable.tools.application_authoring.generator import generate_runtime
+        from unstable.tools.application_authoring.resolver import TrustedBuildApplicationResolver
 
         effective = load_effective_config()
         with TrustedBuildApplicationResolver(
@@ -441,7 +441,7 @@ def cmd_application(args: argparse.Namespace) -> int:
         exports = list(args.export)
         if args.export_all:
             assembly = _module_runtime()
-            from .core import ApplicationComponent
+            from dix.core import ApplicationComponent
 
             applications = assembly.components.require("application", ApplicationComponent)
             dependencies = _dependency_assignments(tuple(args.composition), tuple(args.app))
@@ -634,18 +634,18 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 2
     except Exception as e:
-        from .applications.errors import ApplicationGeneratorError
-        from .applications.scaffold import ApplicationScaffoldError
-        from .assembly import CompositionAssemblyError
-        from .compositions.errors import CompositionGeneratorError
-        from .compositions.scaffold import CompositionScaffoldError
-        from .core.application import ApplicationComponentError, ApplicationRuntimeError
-        from .core.composition import (
+        from unstable.tools.application_authoring.errors import ApplicationGeneratorError
+        from unstable.tools.application_authoring.scaffold import ApplicationScaffoldError
+        from dix.assembly import CompositionAssemblyError
+        from unstable.tools.composition_authoring.errors import CompositionGeneratorError
+        from unstable.tools.composition_authoring.scaffold import CompositionScaffoldError
+        from dix.core.application import ApplicationComponentError, ApplicationRuntimeError
+        from dix.core.composition import (
             CompositionComponentError,
             CompositionRuntimeError,
             CompositionSpecError,
         )
-        from .core.module import ModuleSpecError
+        from dix.core.module import ModuleSpecError
         from .core.module.component import ModuleComponentError
 
         if not isinstance(

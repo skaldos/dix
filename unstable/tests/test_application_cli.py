@@ -4,7 +4,7 @@ import json
 import tomllib
 from pathlib import Path
 
-from dix.cli import main
+from unstable.tools.dix_cli.cli import main
 
 
 def write_composition(module: Path) -> None:

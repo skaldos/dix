@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Self
 from uuid import uuid4
 
-from dix.compositions.errors import CompositionGeneratorError
-from dix.compositions.resolver import TrustedBuildFunctionResolver
+from unstable.tools.composition_authoring.errors import CompositionGeneratorError
+from unstable.tools.composition_authoring.resolver import TrustedBuildFunctionResolver
 from dix.core.application import (
     ApplicationDefinition,
     ApplicationFunctionDescriptor,

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from dix.applications.generator import generate_runtime
-from dix.applications.resolver import TrustedBuildApplicationResolver
-from dix.cli import main
+from unstable.tools.application_authoring.generator import generate_runtime
+from unstable.tools.application_authoring.resolver import TrustedBuildApplicationResolver
+from unstable.tools.dix_cli.cli import main
 from dix.core import (
     ApplicationComponent,
     CompositionComponent,

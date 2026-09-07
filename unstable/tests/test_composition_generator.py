@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from dix.compositions.generator import CompositionGeneratorError, generate_runtime
+from unstable.tools.composition_authoring.generator import CompositionGeneratorError, generate_runtime
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 

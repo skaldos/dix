@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from dix.cli import main
+from unstable.tools.dix_cli.cli import main
 
 
 def test_help(capsys) -> None:

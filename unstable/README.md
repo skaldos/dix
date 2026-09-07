@@ -13,5 +13,16 @@ Rules:
 - synthetic test fixtures belong under `tests/fixtures`.
 - promotion is an explicit review decision, not an automatic release action.
 
+Historical authoring and bootstrap tools are retained by purpose under:
+
+```text
+unstable/tools/dix_cli/
+unstable/tools/application_authoring/
+unstable/tools/composition_authoring/
+```
+
+They are reference implementations, are not installed as DIX entry points, and may rely on
+development dependencies or contracts replaced by the stable core.
+
 Historical tests that exercise unstable modules live under `unstable/tests`. They are preserved as
 reference and migration evidence but are not part of the supported core regression suite.

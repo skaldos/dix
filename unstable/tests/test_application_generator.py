@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from dix.applications.generator import ApplicationGeneratorError, generate_runtime
-from dix.applications.resolver import TrustedBuildApplicationResolver
+from unstable.tools.application_authoring.generator import ApplicationGeneratorError, generate_runtime
+from unstable.tools.application_authoring.resolver import TrustedBuildApplicationResolver
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
 

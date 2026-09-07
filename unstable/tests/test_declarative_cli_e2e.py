@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dix.cli import main as management_main
+from unstable.tools.dix_cli.cli import main as management_main
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
 
