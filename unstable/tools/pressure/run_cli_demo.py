@@ -8,14 +8,15 @@ from dix.core.application import ApplicationInstanceSpec
 
 
 def main(argv: list[str] | None = None) -> int:
-    repository = Path(__file__).resolve().parents[1]
-    modules_root = repository / "examples" / "modules"
+    repository = Path(__file__).resolve().parents[3]
+    example_modules = repository / "examples" / "modules"
+    dix_modules = repository / "unstable" / "modules"
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     applications = registry.require("application", ApplicationComponent)
-    modules.load_module(modules_root / "dix" / "core" / "app", module_id="dix/core/app")
-    modules.load_module(modules_root / "dix" / "core" / "cli", module_id="dix/core/cli")
-    modules.load_module(modules_root / "acme" / "cli_demo", module_id="acme/cli_demo")
+    modules.load_module(dix_modules / "dix" / "core" / "app", module_id="dix/core/app")
+    modules.load_module(dix_modules / "dix" / "core" / "cli", module_id="dix/core/cli")
+    modules.load_module(example_modules / "acme" / "cli_demo", module_id="acme/cli_demo")
     instance = applications.create_instance(
         ApplicationInstanceSpec(
             id="cli",

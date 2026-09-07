@@ -114,10 +114,16 @@ def test_serve_preserves_source_directory_for_relative_module_roots(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    module_root = Path(__file__).resolve().parents[1] / "examples" / "modules"
+    repository = Path(__file__).resolve().parents[1]
+    module_root = repository / "examples" / "modules"
+    unstable_root = repository / "unstable" / "modules"
     config_path = tmp_path / "dix.toml"
     relative_root = os.path.relpath(module_root, tmp_path)
-    config_path.write_text(f'[composition]\ntrusted_module_roots = ["{relative_root}"]\n')
+    relative_unstable_root = os.path.relpath(unstable_root, tmp_path)
+    config_path.write_text(
+        "[composition]\n"
+        f'trusted_module_roots = ["{relative_root}", "{relative_unstable_root}"]\n'
+    )
     effective = load_effective_config(paths=[config_path], env={})
     calls: dict[str, object] = {}
 

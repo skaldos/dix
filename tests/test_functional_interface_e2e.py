@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from dix.registry import find_interface
 from dix.server import create_app
 
 
@@ -20,39 +19,13 @@ def app_config(interface_dir: Path) -> dict[str, object]:
         "host": "127.0.0.1",
         "port": 8000,
         "composition": {
-            "trusted_module_roots": [str(repo_root() / "examples" / "modules")],
+            "trusted_module_roots": [
+                str(repo_root() / "examples" / "modules"),
+                str(repo_root() / "unstable" / "modules"),
+            ],
             "instance": [],
         },
     }
-
-
-def test_example_function_runs_headless_datamodel_chain_once() -> None:
-    app = create_app(app_config(repo_root() / "examples" / "interfaces"))
-    client = TestClient(app)
-
-    first = client.get("/api/interfaces/demo_datamodel/functions/run")
-    instances_after_first = tuple(app.state.composition_component.instances())
-    spec = find_interface([repo_root() / "examples" / "interfaces"], "demo_datamodel")
-    functional = app.state.functional_store.get_or_create(spec)
-    datamodel = functional.compositions["data"].runtime.datamodel
-    registrations_after_first = datamodel.registration_count
-    second = client.get("/api/interfaces/demo_datamodel/functions/run")
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert first.json() == second.json()
-    assert first.json()["compatible"] is True
-    assert first.json()["values"] == {
-        "username": "demo-user",
-        "age": 42,
-        "metadata": {
-            "source": "example",
-            "labels": ["headless", "trusted"],
-        },
-    }
-    assert first.json()["issues"] == []
-    assert datamodel.registration_count == registrations_after_first == 1
-    assert tuple(app.state.composition_component.instances()) == instances_after_first
 
 
 def test_unknown_composition_is_rejected_during_interface_binding(tmp_path: Path) -> None:

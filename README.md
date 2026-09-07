@@ -68,7 +68,7 @@ atomic, but arbitrary Python import side effects cannot be rolled back.
 The included examples are:
 
 ```text
-examples/modules/dix/examples/files/
+unstable/modules/dix/examples/files/
   compositions/datamodel_files/{composition.toml,runtime.py}
 
 examples/modules/acme/demo/
@@ -222,7 +222,7 @@ local wrapper around `base.render`, which calls both example compositions. The a
 verifies structural construction rollback, root-graph isolation, generator output, and complete
 teardown. Load, create, and destroy do not invoke declared functions implicitly.
 
-`examples/modules/dix/core/cli` provides the first-party declarative Typer adapter as an ordinary
+`unstable/modules/dix/core/cli` provides the first-party declarative Typer adapter as an ordinary
 composition. `examples/modules/acme/cli_demo` combines it with a transport-independent tool
 application through an explicit local target allowlist. Run the complete visible lifecycle-neutral
 path with

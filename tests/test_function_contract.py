@@ -19,8 +19,8 @@ from dix.core.composition import CompositionInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 CLI_DEMO_MODULE = REPOSITORY / "examples" / "modules" / "acme" / "cli_demo"
-CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
-APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
+CLI_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "app"
 
 
 def test_signature_projection_preserves_parameter_semantics_and_falls_back_safely() -> None:

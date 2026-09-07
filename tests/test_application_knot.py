@@ -19,7 +19,8 @@ from dix.core.module.component import ModuleComponentError
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 MODULES = REPOSITORY / "examples" / "modules"
-KNOT_MODULE = MODULES / "dix" / "core" / "knot"
+UNSTABLE_MODULES = REPOSITORY / "unstable" / "modules"
+KNOT_MODULE = UNSTABLE_MODULES / "dix" / "core" / "knot"
 TARGET_MODULE = MODULES / "acme" / "cli_demo"
 
 

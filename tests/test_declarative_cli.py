@@ -16,8 +16,8 @@ from dix.core.application import ApplicationFunctionDescriptor
 from dix.core.composition import CompositionInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
-APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
+CLI_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "app"
 
 
 def write_contract(root: Path, *, cli_extra: str = "", model_extra: str = "") -> Path:

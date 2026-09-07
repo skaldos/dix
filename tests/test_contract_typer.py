@@ -17,8 +17,8 @@ from dix.core.function import derive_function_contract
 from dix.core.module import ModuleDescriptor
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
-APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
+CLI_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "cli"
+APP_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "app"
 
 
 def typer_runtime(tmp_path: Path):

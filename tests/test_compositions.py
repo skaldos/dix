@@ -55,7 +55,7 @@ def datamodel_files_component(
     modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
     modules.load_module(
-        repo_root() / "examples" / "modules" / "dix" / "examples" / "files",
+        repo_root() / "unstable" / "modules" / "dix" / "examples" / "files",
         module_id="dix/examples/files",
     )
     root = compositions.create_instance(

@@ -13,10 +13,11 @@ from dix.core.application import ApplicationInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 MODULES = REPOSITORY / "examples" / "modules"
-APP_MODULE = MODULES / "dix" / "core" / "app"
-CLI_MODULE = MODULES / "dix" / "core" / "cli"
+UNSTABLE_MODULES = REPOSITORY / "unstable" / "modules"
+APP_MODULE = UNSTABLE_MODULES / "dix" / "core" / "app"
+CLI_MODULE = UNSTABLE_MODULES / "dix" / "core" / "cli"
 DEMO_MODULE = MODULES / "acme" / "cli_demo"
-HARNESS = REPOSITORY / "examples" / "run_auto_cli.py"
+HARNESS = REPOSITORY / "unstable" / "tools" / "pressure" / "run_auto_cli.py"
 
 
 def load_auto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

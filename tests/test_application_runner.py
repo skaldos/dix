@@ -10,9 +10,9 @@ from dix.core.application import ApplicationInstanceSpec
 from dix.core.module.component import ModuleComponentError
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
+APP_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "app"
 TARGET_MODULE = REPOSITORY / "examples" / "modules" / "acme" / "cli_demo"
-CLI_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "cli"
+CLI_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "cli"
 
 
 def test_runner_is_a_regular_application_and_leaves_no_target_instance() -> None:

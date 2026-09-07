@@ -21,7 +21,7 @@ from dix.core import (
 from dix.core.composition import CompositionInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-APP_MODULE = REPOSITORY / "examples" / "modules" / "dix" / "core" / "app"
+APP_MODULE = REPOSITORY / "unstable" / "modules" / "dix" / "core" / "app"
 
 
 def write_target(module: Path, marker: Path) -> None:

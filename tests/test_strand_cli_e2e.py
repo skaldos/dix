@@ -10,12 +10,13 @@ from dix.core.application import ApplicationInstanceSpec
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 MODULES = REPOSITORY / "examples" / "modules"
-KNOT_MODULE = MODULES / "dix" / "core" / "knot"
-APP_MODULE = MODULES / "dix" / "core" / "app"
-CLI_MODULE = MODULES / "dix" / "core" / "cli"
-STRAND_CLI_MODULE = MODULES / "dix" / "core" / "strand_cli"
+UNSTABLE_MODULES = REPOSITORY / "unstable" / "modules"
+KNOT_MODULE = UNSTABLE_MODULES / "dix" / "core" / "knot"
+APP_MODULE = UNSTABLE_MODULES / "dix" / "core" / "app"
+CLI_MODULE = UNSTABLE_MODULES / "dix" / "core" / "cli"
+STRAND_CLI_MODULE = UNSTABLE_MODULES / "dix" / "core" / "strand_cli"
 TARGET_MODULE = MODULES / "acme" / "cli_demo"
-HARNESS = REPOSITORY / "examples" / "run_strand_cli.py"
+HARNESS = REPOSITORY / "unstable" / "tools" / "pressure" / "run_strand_cli.py"
 
 
 def load_auto(monkeypatch):
