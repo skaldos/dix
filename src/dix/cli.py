@@ -54,89 +54,6 @@ def cmd_config(args: argparse.Namespace) -> int:
     raise SystemExit(f"unknown config command: {args.config_cmd}")
 
 
-def _interface_dirs() -> list[Path]:
-    cfg = load_effective_config()
-    return [Path(item) for item in cfg.values["interface_dirs"]]
-
-
-def _interface_path(interface_id: str) -> Path:
-    base = _interface_dirs()[0]
-    return base / f"{interface_id}.toml"
-
-
-def _read_interface_title(path: Path) -> str:
-    from .registry import load_interface
-
-    return load_interface(path).interface.title
-
-
-def cmd_interface(args: argparse.Namespace) -> int:
-    if args.interface_cmd == "list":
-        rows = []
-        for directory in _interface_dirs():
-            if not directory.exists():
-                continue
-            for path in sorted(directory.glob("*.toml")):
-                rows.append(
-                    {"id": path.stem, "title": _read_interface_title(path), "path": str(path)}
-                )
-        _json_print(rows)
-        return 0
-
-    path = _interface_path(args.id)
-    if args.interface_cmd == "new":
-        if path.exists():
-            raise SystemExit(f"interface already exists: {args.id}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            f"[interface]\n"
-            f'id = "{args.id}"\n'
-            f'title = "{args.id.replace("_", " ").title()}"\n'
-            f'access = {{ mode = "public" }}\n\n'
-            f"[[components]]\n"
-            f'id = "title"\n'
-            f'use = "input"\n'
-            f'config = {{ label = "Title", placeholder = "Enter a title" }}\n\n'
-            f"[[components]]\n"
-            f'id = "kind"\n'
-            f'use = "select"\n'
-            f'config = {{ label = "Kind", mode = "single", options = [{{ id = "demo", label = "Demo" }}] }}\n'
-        )
-        print(f"created: {path}")
-        return 0
-    if args.interface_cmd == "delete":
-        if not path.exists():
-            raise SystemExit(f"interface not found: {args.id}")
-        if not args.force:
-            raise SystemExit("refusing to delete without --force")
-        path.unlink()
-        print(f"deleted: {path}")
-        return 0
-    if args.interface_cmd == "edit":
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-        if not editor:
-            raise SystemExit("VISUAL or EDITOR must be set")
-        if not path.exists():
-            raise SystemExit(f"interface not found: {args.id}")
-        return subprocess.call([editor, str(path)])
-    raise SystemExit(f"unknown interface command: {args.interface_cmd}")
-
-
-def cmd_component(args: argparse.Namespace) -> int:
-    if args.component_cmd == "list":
-        from .registry import component_definitions
-
-        _json_print([definition.model_dump() for definition in component_definitions()])
-        return 0
-    raise SystemExit(f"unknown component command: {args.component_cmd}")
-
-
-def cmd_serve(args: argparse.Namespace) -> int:
-    from .server import serve
-
-    return serve()
-
-
 def _composition_runtime():
     from .assembly import assemble_compositions
 
@@ -632,23 +549,6 @@ def build_parser() -> argparse.ArgumentParser:
     config_edit.add_argument("--path", default=None)
     config.set_defaults(func=cmd_config)
 
-    interface = sub.add_parser("interface")
-    interface_sub = interface.add_subparsers(dest="interface_cmd", required=True)
-    interface_sub.add_parser("list")
-    interface_new = interface_sub.add_parser("new")
-    interface_new.add_argument("id")
-    interface_edit = interface_sub.add_parser("edit")
-    interface_edit.add_argument("id")
-    interface_delete = interface_sub.add_parser("delete")
-    interface_delete.add_argument("id")
-    interface_delete.add_argument("--force", action="store_true")
-    interface.set_defaults(func=cmd_interface)
-
-    component = sub.add_parser("component")
-    component_sub = component.add_subparsers(dest="component_cmd", required=True)
-    component_sub.add_parser("list")
-    component.set_defaults(func=cmd_component)
-
     module = sub.add_parser("module")
     module_sub = module.add_subparsers(dest="module_cmd", required=True)
     module_new = module_sub.add_parser("new")
@@ -718,9 +618,6 @@ def build_parser() -> argparse.ArgumentParser:
     application_generate = application_sub.add_parser("generate")
     application_generate.add_argument("path")
     application.set_defaults(func=cmd_application)
-
-    serve = sub.add_parser("serve")
-    serve.set_defaults(func=cmd_serve)
 
     return parser
 

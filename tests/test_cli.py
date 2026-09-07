@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dix.cli import main
 
 
@@ -19,23 +21,11 @@ def test_config_effective_cli(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["config", "effective"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["values"]["port"] == 8000
+    assert data["values"] == {"composition": {"instance": [], "trusted_module_roots": []}}
 
 
-def test_interface_new_and_list(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.chdir(tmp_path)
-    assert main(["interface", "new", "demo_request"]) == 0
-    assert (tmp_path / "examples" / "interfaces" / "demo_request.toml").exists()
-    capsys.readouterr()
-    assert main(["interface", "list"]) == 0
-    rows = json.loads(capsys.readouterr().out)
-    assert rows[0]["id"] == "demo_request"
-
-
-def test_component_list(capsys) -> None:
-    assert main(["component", "list"]) == 0
-    rows = json.loads(capsys.readouterr().out)
-    assert {row["id"] for row in rows} == {"input", "select"}
-    by_id = {row["id"]: row for row in rows}
-    assert by_id["input"]["interaction"]["role"] == "value_input"
-    assert by_id["select"]["interaction"]["role"] == "choice_input"
+@pytest.mark.parametrize("command", ["serve", "interface", "component"])
+def test_legacy_interface_commands_are_not_available(command: str) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main([command])
+    assert exc_info.value.code == 2

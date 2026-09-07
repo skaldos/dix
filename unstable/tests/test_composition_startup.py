@@ -3,11 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from dix.assembly import CompositionAssemblyError, assemble_compositions
 from dix.config import load_effective_config
-from dix.server import create_app
 
 
 def write_composition(module: Path, local_id: str, body: str, runtime: str) -> None:
@@ -124,10 +122,10 @@ startup = false
     )
     effective = load_effective_config(paths=[config_path], env={})
 
-    app = create_app(effective)
-    compositions = app.state.composition_component
+    assembly = assemble_compositions(effective.composition)
+    compositions = assembly.compositions
 
-    assert [item.inspection.id for item in app.state.module_component.modules()] == [
+    assert [item.inspection.id for item in assembly.modules.modules()] == [
         "a-root",
         "z-base",
     ]
@@ -141,12 +139,10 @@ startup = false
     assert root.context.config_base_dir == config_dir.resolve()
     assert child.context.config_base_dir == (modules / "a-root" / "compositions" / "root").resolve()
 
-    with TestClient(app):
-        pass
+    assembly.shutdown()
 
     assert compositions.instances() == ()
     assert not log.exists()
-    app.state.composition_assembly.shutdown()
 
 
 def test_invalid_trusted_graph_fails_before_any_candidate_import(tmp_path: Path) -> None:

@@ -46,25 +46,10 @@ class EffectiveConfig:
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "runtime_root": ".dix/runtime",
-    "interface_dirs": ["examples/interfaces"],
-    "theme": "default",
-    "host": "127.0.0.1",
-    "port": 8000,
-    "reference_renderer_enabled": True,
-    "reference_renderer_path": "/render",
     "composition": {"trusted_module_roots": [], "instance": []},
 }
 
-ENV_KEYS = {
-    "DIX_RUNTIME_ROOT": "runtime_root",
-    "DIX_INTERFACE_DIRS": "interface_dirs",
-    "DIX_THEME": "theme",
-    "DIX_HOST": "host",
-    "DIX_PORT": "port",
-    "DIX_REFERENCE_RENDERER_ENABLED": "reference_renderer_enabled",
-    "DIX_REFERENCE_RENDERER_PATH": "reference_renderer_path",
-}
+ENV_KEYS: dict[str, str] = {}
 
 
 def default_config_paths(cwd: Path | None = None) -> list[Path]:
@@ -74,17 +59,6 @@ def default_config_paths(cwd: Path | None = None) -> list[Path]:
 
 
 def _coerce_env_value(key: str, raw: str) -> Any:
-    if key == "port":
-        return int(raw)
-    if key == "reference_renderer_enabled":
-        value = raw.strip().lower()
-        if value in {"1", "true", "yes", "on"}:
-            return True
-        if value in {"0", "false", "no", "off"}:
-            return False
-        raise ValueError("reference_renderer_enabled env value must be boolean-like")
-    if key == "interface_dirs":
-        return [item.strip() for item in raw.split(os.pathsep) if item.strip()]
     return raw
 
 
@@ -147,23 +121,6 @@ def load_effective_config(
 
 
 def validate_config_values(values: dict[str, Any]) -> None:
-    if not isinstance(values.get("runtime_root"), str) or not values["runtime_root"]:
-        raise ValueError("runtime_root must be a non-empty string")
-    dirs = values.get("interface_dirs")
-    if not isinstance(dirs, list) or not all(isinstance(item, str) and item for item in dirs):
-        raise ValueError("interface_dirs must be a non-empty list of strings")
-    if not isinstance(values.get("theme"), str) or not values["theme"]:
-        raise ValueError("theme must be a non-empty string")
-    if not isinstance(values.get("host"), str) or not values["host"]:
-        raise ValueError("host must be a non-empty string")
-    if not isinstance(values.get("reference_renderer_enabled"), bool):
-        raise ValueError("reference_renderer_enabled must be a boolean")
-    path = values.get("reference_renderer_path")
-    if not isinstance(path, str) or not path.startswith("/") or path.endswith("/"):
-        raise ValueError("reference_renderer_path must start with '/' and must not end with '/'")
-    port = values.get("port")
-    if not isinstance(port, int) or port < 1 or port > 65535:
-        raise ValueError("port must be an integer between 1 and 65535")
     _validate_composition_config(values.get("composition"))
 
 
@@ -244,14 +201,7 @@ def write_default_config(path: Path) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "# dix local configuration\n"
-        "runtime_root = \".dix/runtime\"\n"
-        "interface_dirs = [\"examples/interfaces\"]\n"
-        "theme = \"default\"\n"
-        "host = \"127.0.0.1\"\n"
-        "port = 8000\n"
-        "reference_renderer_enabled = true\n"
-        "reference_renderer_path = \"/render\"\n"
-        "\n[composition]\n"
+        "[composition]\n"
         "trusted_module_roots = []\n"
     )
     return True
