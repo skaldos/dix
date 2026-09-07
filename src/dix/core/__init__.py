@@ -28,6 +28,7 @@ from .element import (
 )
 from .module.component import ModuleComponent, ModuleComponentError
 from .norn import (
+    MODEL_ELEMENT_TYPE,
     NornComponent,
     NornError,
     RegisteredStrand,
@@ -42,6 +43,8 @@ from .norn import (
     StrandOutputError,
     StrandRegistrationError,
     StrandValueError,
+    model_definition,
+    model_element,
 )
 from .function import (
     FunctionContract,
@@ -90,6 +93,7 @@ __all__ = [
     "ModelIssue",
     "ModelNotFound",
     "ModelResult",
+    "MODEL_ELEMENT_TYPE",
     "ModuleComponent",
     "ModuleComponentError",
     "NornComponent",
@@ -111,4 +115,6 @@ __all__ = [
     "UnknownElementType",
     "create_core_component_registry",
     "derive_function_contract",
+    "model_definition",
+    "model_element",
 ]

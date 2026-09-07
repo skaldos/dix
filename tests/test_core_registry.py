@@ -113,8 +113,10 @@ def test_provider_dependencies_resolve_in_the_same_scope() -> None:
 
     assert first_model.element is first_element
     assert first_norn.element is first_element
+    assert first_norn.datamodel is first_model
     assert second_model.element is second_element
     assert second_norn.element is second_element
+    assert second_norn.datamodel is second_model
     assert first_model is not second_model
     assert first_element is not second_element
     assert first_norn is not second_norn

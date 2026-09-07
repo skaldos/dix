@@ -120,6 +120,11 @@ class DatamodelComponent:
     def registration_count(self) -> int:
         return len(self._models)
 
+    @property
+    def default_element_scope(self) -> ElementScope:
+        """Return the immutable element fallback used by new model registrations."""
+        return self._default_scope
+
     def register_model(
         self,
         definition: ModelDefinition,

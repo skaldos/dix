@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, dataclass
+from typing import Any
+from uuid import uuid4
 
 import pytest
 
 from dix.core import (
     NornComponent,
+    DatamodelComponent,
+    ElementBinding,
+    ElementComponent,
+    ElementProcessor,
+    ElementResult,
+    ModelDefinition,
     StrandDefinition,
     StrandDefinitionError,
     StrandExecutionError,
@@ -16,8 +24,45 @@ from dix.core import (
     StrandOutputError,
     StrandRegistrationError,
     create_core_component_registry,
+    model_definition,
+    model_element,
 )
 from dix.core.element import ElementSpec, UnknownElementType
+
+
+@dataclass(frozen=True)
+class NumericStringProcessor:
+    delegate: ElementProcessor
+
+    def decode(self, raw: Any) -> ElementResult:
+        value = int(raw) if isinstance(raw, str) and raw.isdecimal() else raw
+        return self.delegate.decode(value)
+
+
+@dataclass(frozen=True)
+class NumericStringHandler:
+    handler_id: str = "test.numeric_string"
+
+    def bind(
+        self,
+        spec: ElementSpec,
+        delegate: ElementProcessor | None,
+    ) -> ElementProcessor:
+        if delegate is None:
+            raise AssertionError("numeric string handler requires a delegate")
+        return NumericStringProcessor(delegate)
+
+
+def model(name: str = "test/user") -> ModelDefinition:
+    return ModelDefinition(
+        uid=uuid4(),
+        name=name,
+        version="1",
+        schema={
+            "name": ElementSpec("string"),
+            "age": ElementSpec("integer"),
+        },
+    )
 
 
 def strand(
@@ -154,3 +199,129 @@ def test_norn_provider_is_composition_scoped() -> None:
 
     assert asyncio.run(first.call("test/text", "value")) == "first:value"
     assert asyncio.run(second.call("test/text", "value")) == "second:value"
+
+
+def test_model_element_processes_complete_input_and_output_models() -> None:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    input_model = model("test/input")
+    output_model = ModelDefinition(
+        uid=uuid4(),
+        name="test/output",
+        schema={"message": ElementSpec("string")},
+    )
+    seen: list[object] = []
+    norn.register(
+        StrandDefinition(
+            "test/model",
+            model_element(input_model),
+            model_element(output_model),
+        )
+    )
+
+    def handler(value: object) -> object:
+        seen.append(value)
+        return {"message": f"{value['name']}:{value['age']}"}  # type: ignore[index]
+
+    norn.bind("test/model", handler_id="test.model", handler=handler)
+
+    result = asyncio.run(norn.call("test/model", {"name": "Ada", "age": 42}))
+
+    assert dict(result) == {"message": "Ada:42"}
+    assert dict(seen[0]) == {"name": "Ada", "age": 42}  # type: ignore[arg-type]
+    assert model_definition(norn.describe("test/model").input_element) is input_model
+
+
+def test_model_element_reports_model_issues_at_the_strand_boundary() -> None:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    norn.register(
+        StrandDefinition(
+            "test/model",
+            model_element(model()),
+            ElementSpec("string"),
+        )
+    )
+    calls: list[object] = []
+    norn.bind(
+        "test/model",
+        handler_id="test.model",
+        handler=lambda value: calls.append(value) or "unused",
+    )
+
+    with pytest.raises(StrandInputError) as error:
+        asyncio.run(norn.call("test/model", {"age": "old", "extra": True}))
+
+    assert calls == []
+    assert [(issue.details["field"], issue.code) for issue in error.value.issues] == [
+        ("name", "missing_field"),
+        ("extra", "additional_field"),
+        ("age", "incompatible_type"),
+    ]
+
+    with pytest.raises(StrandInputError) as non_mapping:
+        asyncio.run(norn.call("test/model", ["not", "a", "mapping"]))
+    assert non_mapping.value.issues[0].code == "incompatible_model_value"
+
+
+def test_model_element_rejects_incompatible_handler_output() -> None:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    norn.register(
+        StrandDefinition(
+            "test/model-output",
+            ElementSpec("string"),
+            model_element(model("test/output")),
+        )
+    )
+    norn.bind(
+        "test/model-output",
+        handler_id="test.invalid-model",
+        handler=lambda value: {"name": value, "age": "unknown"},
+    )
+
+    with pytest.raises(StrandOutputError) as error:
+        asyncio.run(norn.call("test/model-output", "Ada"))
+
+    assert [(issue.details["field"], issue.code) for issue in error.value.issues] == [
+        ("age", "incompatible_type"),
+    ]
+
+
+def test_model_element_uses_model_local_element_bindings() -> None:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    wrapped = model_element(
+        model(),
+        elements=(
+            ElementBinding(
+                type_name="integer",
+                handler_id="test.numeric_string",
+                handler=NumericStringHandler(),
+                mode="wrap",
+            ),
+        ),
+    )
+    seen: list[object] = []
+    norn.register(StrandDefinition("test/wrapped", wrapped, ElementSpec("integer")))
+    norn.bind(
+        "test/wrapped",
+        handler_id="test.age",
+        handler=lambda value: seen.append(value) or value["age"],  # type: ignore[index]
+    )
+
+    assert asyncio.run(norn.call("test/wrapped", {"name": "Ada", "age": "42"})) == 42
+    assert dict(seen[0])["age"] == 42  # type: ignore[arg-type]
+
+
+def test_model_element_is_private_to_each_norn_scope() -> None:
+    registry = create_core_component_registry()
+    scope = registry.create_scope("model")
+    element = scope.require("element", ElementComponent)
+    datamodel = scope.require("datamodel", DatamodelComponent)
+    norn = scope.require("norn", NornComponent)
+
+    assert norn.datamodel is datamodel
+    assert datamodel.registration_count == 0
+    norn.register(
+        StrandDefinition("test/model", model_element(model()), ElementSpec("string"))
+    )
+    assert datamodel.registration_count == 1
+    with pytest.raises(UnknownElementType):
+        element.bind(model_element(model()))

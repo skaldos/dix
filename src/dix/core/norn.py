@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from .element import ElementComponent, ElementIssue, ElementProcessor, ElementSpec
+from .datamodel import DatamodelComponent, ModelDefinition, ModelResult, RegisteredModel
+from .element import (
+    ElementBinding,
+    ElementIssue,
+    ElementProcessor,
+    ElementResult,
+    ElementSpec,
+)
 
 StrandHandler = Callable[[Any], Any]
+MODEL_ELEMENT_TYPE = "model"
 
 
 class NornError(Exception):
@@ -108,13 +116,72 @@ class StrandDescriptor:
     handler_id: str | None
 
 
+@dataclass(frozen=True)
+class _ModelElementProcessor:
+    datamodel: DatamodelComponent
+    model: RegisteredModel
+
+    def decode(self, raw: Any) -> ElementResult:
+        if not isinstance(raw, Mapping):
+            return ElementResult(
+                value=None,
+                compatible=False,
+                issues=(
+                    ElementIssue(
+                        code="incompatible_model_value",
+                        message=f"expected model mapping, got {type(raw).__name__}",
+                        details={
+                            "model": self.model.definition.name,
+                            "received": type(raw).__name__,
+                        },
+                    ),
+                ),
+            )
+        result = self.datamodel.instantiate(self.model, raw)
+        return ElementResult(
+            value=result.values if result.compatible else None,
+            compatible=result.compatible,
+            issues=_model_issues(result),
+        )
+
+
+class _ModelElementHandler:
+    handler_id = "norn.model"
+
+    def __init__(self, datamodel: DatamodelComponent) -> None:
+        self.datamodel = datamodel
+
+    def bind(
+        self,
+        spec: ElementSpec,
+        delegate: ElementProcessor | None,
+    ) -> ElementProcessor:
+        if delegate is not None:
+            raise StrandDefinitionError("Norn model element cannot wrap a delegate")
+        definition, elements = _model_element_contract(spec)
+        registered = self.datamodel.register_model(definition, elements=elements)
+        return _ModelElementProcessor(self.datamodel, registered)
+
+
 class NornComponent:
     """Scope-local registry and invocation boundary for model-independent strands."""
 
     component_id = "norn"
 
-    def __init__(self, element: ElementComponent) -> None:
-        self.element = element
+    def __init__(self, datamodel: DatamodelComponent) -> None:
+        self.datamodel = datamodel
+        self.element = datamodel.element
+        self._element_scope = self.element.create_extension_scope(
+            (
+                ElementBinding(
+                    type_name=MODEL_ELEMENT_TYPE,
+                    handler_id=_ModelElementHandler.handler_id,
+                    handler=_ModelElementHandler(datamodel),
+                    mode="define",
+                ),
+            ),
+            parent=datamodel.default_element_scope,
+        )
         self._registered: dict[str, RegisteredStrand] = {}
         self._bindings: dict[str, StrandBinding] = {}
 
@@ -124,8 +191,8 @@ class NornComponent:
         if definition.id in self._registered:
             raise StrandRegistrationError(f"strand is already registered: {definition.id}")
 
-        input_processor = self.element.bind(definition.input_element)
-        output_processor = self.element.bind(definition.output_element)
+        input_processor = self.element.bind(definition.input_element, self._element_scope)
+        output_processor = self.element.bind(definition.output_element, self._element_scope)
         registered = RegisteredStrand(
             definition=definition,
             input_processor=input_processor,
@@ -217,6 +284,68 @@ def _strand_id(value: str) -> str:
     ):
         raise StrandDefinitionError(f"strand id must be namespaced: {value!r}")
     return normalized
+
+
+def model_element(
+    definition: ModelDefinition,
+    *,
+    elements: tuple[ElementBinding, ...] = (),
+) -> ElementSpec:
+    """Represent one immutable model definition as a local Norn boundary element."""
+    if not isinstance(definition, ModelDefinition):
+        raise StrandDefinitionError("model element definition must be a ModelDefinition")
+    if not isinstance(elements, tuple) or not all(
+        isinstance(binding, ElementBinding) for binding in elements
+    ):
+        raise StrandDefinitionError("model element bindings must be a tuple of ElementBinding")
+    return ElementSpec(
+        MODEL_ELEMENT_TYPE,
+        {
+            "definition": definition,
+            "elements": elements,
+        },
+    )
+
+
+def model_definition(element: ElementSpec) -> ModelDefinition:
+    """Return the model definition carried by a Norn model boundary element."""
+    definition, _ = _model_element_contract(element)
+    return definition
+
+
+def _model_element_contract(
+    spec: ElementSpec,
+) -> tuple[ModelDefinition, tuple[ElementBinding, ...]]:
+    if spec.type != MODEL_ELEMENT_TYPE:
+        raise StrandDefinitionError(f"expected a '{MODEL_ELEMENT_TYPE}' element")
+    if set(spec.config) != {"definition", "elements"}:
+        raise StrandDefinitionError(
+            "model element config must contain exactly 'definition' and 'elements'"
+        )
+    definition = spec.config["definition"]
+    elements = spec.config["elements"]
+    if not isinstance(definition, ModelDefinition):
+        raise StrandDefinitionError("model element definition must be a ModelDefinition")
+    if not isinstance(elements, tuple) or not all(
+        isinstance(binding, ElementBinding) for binding in elements
+    ):
+        raise StrandDefinitionError("model element bindings must be a tuple of ElementBinding")
+    return definition, elements
+
+
+def _model_issues(result: ModelResult) -> tuple[ElementIssue, ...]:
+    return tuple(
+        ElementIssue(
+            code=issue.code,
+            message=(
+                issue.message
+                if issue.field is None
+                else f"model field '{issue.field}': {issue.message}"
+            ),
+            details={"field": issue.field, **dict(issue.details)},
+        )
+        for issue in result.issues
+    )
 
 
 def _value_error_message(

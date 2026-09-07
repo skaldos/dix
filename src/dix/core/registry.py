@@ -152,7 +152,7 @@ def create_core_component_registry() -> ComponentRegistry:
             id="norn",
             lifetime="composition",
             create=lambda scope: NornComponent(
-                element=scope.require("element", ElementComponent)
+                datamodel=scope.require("datamodel", DatamodelComponent)
             ),
         )
     )
