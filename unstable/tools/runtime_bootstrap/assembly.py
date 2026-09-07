@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dix.config import CompositionSettings
+from unstable.tools.runtime_bootstrap.config import CompositionSettings
 from dix.core import (
     ComponentRegistry,
     CompositionComponent,

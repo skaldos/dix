@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from dix.assembly import CompositionAssemblyError, assemble_compositions
-from dix.config import load_effective_config
+from unstable.tools.runtime_bootstrap.assembly import (
+    CompositionAssemblyError,
+    assemble_compositions,
+)
+from unstable.tools.runtime_bootstrap.config import load_effective_config
 
 
 def write_composition(module: Path, local_id: str, body: str, runtime: str) -> None:

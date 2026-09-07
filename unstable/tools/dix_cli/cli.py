@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dix.config import load_effective_config, write_default_config
+from unstable.tools.runtime_bootstrap.config import load_effective_config, write_default_config
 
 
 def _json_print(value: Any) -> None:
@@ -55,14 +55,14 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def _composition_runtime():
-    from dix.assembly import assemble_compositions
+    from unstable.tools.runtime_bootstrap.assembly import assemble_compositions
 
     effective = load_effective_config()
     return assemble_compositions(effective.composition).compositions
 
 
 def _application_runtime():
-    from dix.assembly import assemble_compositions
+    from unstable.tools.runtime_bootstrap.assembly import assemble_compositions
     from dix.core import ApplicationComponent
 
     effective = load_effective_config()
@@ -71,7 +71,7 @@ def _application_runtime():
 
 
 def _module_runtime():
-    from dix.assembly import assemble_compositions
+    from unstable.tools.runtime_bootstrap.assembly import assemble_compositions
 
     effective = load_effective_config()
     return assemble_compositions(effective.composition)
@@ -636,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         from unstable.tools.application_authoring.errors import ApplicationGeneratorError
         from unstable.tools.application_authoring.scaffold import ApplicationScaffoldError
-        from dix.assembly import CompositionAssemblyError
+        from unstable.tools.runtime_bootstrap.assembly import CompositionAssemblyError
         from unstable.tools.composition_authoring.errors import CompositionGeneratorError
         from unstable.tools.composition_authoring.scaffold import CompositionScaffoldError
         from dix.core.application import ApplicationComponentError, ApplicationRuntimeError

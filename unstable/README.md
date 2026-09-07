@@ -19,6 +19,7 @@ Historical authoring and bootstrap tools are retained by purpose under:
 unstable/tools/dix_cli/
 unstable/tools/application_authoring/
 unstable/tools/composition_authoring/
+unstable/tools/runtime_bootstrap/
 ```
 
 They are reference implementations, are not installed as DIX entry points, and may rely on

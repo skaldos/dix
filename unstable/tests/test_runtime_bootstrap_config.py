@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from dix.config import load_effective_config, write_default_config
+from unstable.tools.runtime_bootstrap.config import load_effective_config, write_default_config
 
 
 def test_effective_config_uses_defaults(tmp_path: Path) -> None:
