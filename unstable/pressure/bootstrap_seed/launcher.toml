@@ -1,0 +1,9 @@
+[launcher]
+name = "dix-seed-hello"
+adapter = "python_cli"
+application = "dix/examples/seed_hello/main"
+function = "main"
+
+[[modules]]
+id = "dix/examples/seed_hello"
+source = "../../modules/dix/examples/seed_hello"

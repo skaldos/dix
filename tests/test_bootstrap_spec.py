@@ -101,6 +101,24 @@ def test_launcher_spec_rejects_duplicate_module_ids(tmp_path: Path) -> None:
         load_launcher_spec(spec)
 
 
+def test_launcher_spec_rejects_missing_module_source(tmp_path: Path) -> None:
+    spec = write_spec(tmp_path / "launcher.toml", "missing-module")
+
+    with pytest.raises(LauncherSpecError, match=r"modules\[0\]\.source does not exist"):
+        load_launcher_spec(spec)
+
+
+def test_launcher_spec_exposes_wrong_module_id_through_missing_application(
+    tmp_path: Path,
+) -> None:
+    write_module(tmp_path / "module")
+    spec = write_spec(tmp_path / "launcher.toml", "module")
+    spec.write_text(spec.read_text().replace('id = "acme/example"', 'id = "acme/wrong"'))
+
+    with pytest.raises(LauncherSpecError, match="application is not provided"):
+        load_launcher_spec(spec)
+
+
 def test_launcher_spec_requires_application_from_configured_modules(tmp_path: Path) -> None:
     write_module(tmp_path / "module")
     spec = write_spec(
