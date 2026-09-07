@@ -1,0 +1,14 @@
+[app]
+id = "auto"
+
+[compositions.cli]
+use = "dix/core/cli/typer_cli"
+
+[apps.runner]
+use = "dix/core/knot/runner"
+
+[functions.describe]
+description = "Describe a strand-driven CLI for one loaded application."
+
+[functions.run]
+description = "Bind and run one loaded application through a strand-driven CLI."

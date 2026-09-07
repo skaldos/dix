@@ -21,3 +21,12 @@ description = "Build an automatic Typer CLI from one application descriptor."
 
 [functions.invoke_application]
 description = "Build and invoke an automatic application CLI with explicit argv."
+
+[functions.describe_strands]
+description = "Describe an automatic CLI projection from bound strand contracts."
+
+[functions.build_strands]
+description = "Build an automatic Typer CLI from bound strand contracts."
+
+[functions.invoke_strands]
+description = "Build and invoke a strand-driven CLI with explicit argv."

@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Literal
 from uuid import uuid4
 
 import click
@@ -16,7 +16,14 @@ import typer
 from click.testing import CliRunner
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from dix.core import DatamodelComponent, ElementSpec, ModelDefinition, RegisteredModel
+from dix.core import (
+    DatamodelComponent,
+    ElementSpec,
+    ModelDefinition,
+    RegisteredModel,
+    StrandDescriptor,
+    model_definition,
+)
 from dix.core.application import ApplicationDescriptor, ApplicationFunctionDescriptor
 from dix.core.composition import CompositionRuntimeContext
 
@@ -147,6 +154,20 @@ class _AutomaticCli:
     commands: tuple[_AutomaticCommand, ...]
 
 
+@dataclass(frozen=True)
+class _StrandCommand:
+    id: str
+    descriptor: StrandDescriptor
+    model: ModelDefinition
+
+
+@dataclass(frozen=True)
+class _StrandCli:
+    name: str
+    description: str
+    commands: tuple[_StrandCommand, ...]
+
+
 class Runtime:
     """First-party Typer adapter over explicit DIX application call targets."""
 
@@ -251,6 +272,56 @@ class Runtime:
         """Invoke an automatic CLI without terminating the embedding process."""
         try:
             application = self.build_application(descriptor=descriptor, invoke=invoke)
+        except (DeclarativeCliError, ValidationError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        return _invoke_typer(application, argv)
+
+    def describe_strands(
+        self,
+        *,
+        name: str,
+        descriptors: Sequence[StrandDescriptor],
+    ) -> Mapping[str, object]:
+        """Describe a CLI projected only from bound strand contracts."""
+        cli = self._normalize_strands(name, descriptors)
+        return {
+            "name": cli.name,
+            "description": cli.description,
+            "commands": {
+                command.id: _describe_strand_contract(command)
+                for command in cli.commands
+            },
+        }
+
+    def build_strands(
+        self,
+        *,
+        name: str,
+        descriptors: Sequence[StrandDescriptor],
+        invoke: Callable[[str, Mapping[str, object]], object],
+    ) -> typer.Typer:
+        """Build a fresh CLI from bound strand contracts."""
+        return self._build_strand_cli(
+            self._normalize_strands(name, descriptors),
+            invoke,
+        )
+
+    def invoke_strands(
+        self,
+        *,
+        name: str,
+        descriptors: Sequence[StrandDescriptor],
+        invoke: Callable[[str, Mapping[str, object]], object],
+        argv: Sequence[str],
+    ) -> int:
+        """Invoke a strand-driven CLI without terminating the embedding process."""
+        try:
+            application = self.build_strands(
+                name=name,
+                descriptors=descriptors,
+                invoke=invoke,
+            )
         except (DeclarativeCliError, ValidationError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 2
@@ -471,6 +542,72 @@ class Runtime:
             )(callback)
         return application
 
+    def _normalize_strands(
+        self,
+        name: str,
+        descriptors: Sequence[StrandDescriptor],
+    ) -> _StrandCli:
+        cli_name = _nonempty(name, "strand CLI name")
+        commands: list[_StrandCommand] = []
+        command_names: set[str] = set()
+        strand_ids: set[str] = set()
+        for descriptor in descriptors:
+            if not isinstance(descriptor, StrandDescriptor):
+                raise DeclarativeCliError("strand CLI requires StrandDescriptor values")
+            if descriptor.id in strand_ids:
+                raise DeclarativeCliError(f"duplicate strand descriptor: {descriptor.id}")
+            strand_ids.add(descriptor.id)
+            if not descriptor.bound:
+                raise DeclarativeCliError(f"strand is not bound: {descriptor.id}")
+            try:
+                model = model_definition(descriptor.input_element)
+            except Exception as exc:
+                raise DeclarativeCliError(
+                    f"strand input is not a model element: {descriptor.id}"
+                ) from exc
+            command_id = descriptor.id.rsplit("/", 1)[-1].replace("_", "-")
+            if command_id in command_names:
+                raise DeclarativeCliError(
+                    f"strand CLI command name collision: {command_id}"
+                )
+            command_names.add(command_id)
+            for field_name, element in model.schema.items():
+                _identifier(field_name, "strand model field")
+                if element.type not in {"string", "integer", "number", "boolean"}:
+                    raise DeclarativeCliError(
+                        f"unsupported strand CLI model type for '{field_name}': {element.type}"
+                    )
+            commands.append(_StrandCommand(command_id, descriptor, model))
+        return _StrandCli(
+            name=cli_name,
+            description=f"Automatic strand CLI for {cli_name}.",
+            commands=tuple(commands),
+        )
+
+    def _build_strand_cli(
+        self,
+        cli: _StrandCli,
+        invoke: Callable[[str, Mapping[str, object]], object],
+    ) -> typer.Typer:
+        if not callable(invoke):
+            raise DeclarativeCliError("strand CLI invoke target must be callable")
+        application = typer.Typer(
+            name=cli.name,
+            help=cli.description,
+            add_completion=False,
+            no_args_is_help=True,
+            pretty_exceptions_enable=False,
+        )
+
+        @application.callback()
+        def strand_root() -> None:
+            """Automatic strand command group."""
+
+        for command in cli.commands:
+            callback = _strand_callback(command, invoke)
+            application.command(name=command.id, help=command.descriptor.id)(callback)
+        return application
+
     def _command_callback(self, command: _Command) -> Callable[..., None]:
         def callback(**values: object) -> None:
             result = self.datamodel.instantiate(command.model, values)
@@ -572,6 +709,48 @@ def _automatic_parameter(parameter) -> inspect.Parameter:
     )
 
 
+def _strand_callback(
+    command: _StrandCommand,
+    invoke: Callable[[str, Mapping[str, object]], object],
+) -> Callable[..., None]:
+    def callback(**values: object) -> None:
+        output = invoke(command.descriptor.id, values)
+        _write_automatic_output(command.descriptor.id, output)
+
+    callback.__name__ = f"strand_{command.id.replace('-', '_')}"
+    callback.__doc__ = command.descriptor.id
+    callback.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        parameters=tuple(
+            _strand_parameter(field_name, element)
+            for field_name, element in command.model.schema.items()
+        )
+    )
+    return callback
+
+
+def _strand_parameter(field_name: str, element: ElementSpec) -> inspect.Parameter:
+    annotation = {
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": str,
+    }[element.type]
+    boolean_value = element.type == "boolean"
+    option = typer.Option(
+        ...,
+        f"--{field_name.replace('_', '-')}",
+        help=f"{field_name} ({element.type}).",
+        callback=_parse_boolean if boolean_value else None,
+        metavar="TRUE|FALSE" if boolean_value else None,
+    )
+    return inspect.Parameter(
+        field_name,
+        inspect.Parameter.KEYWORD_ONLY,
+        default=option,
+        annotation=annotation,
+    )
+
+
 def _write_automatic_output(function_id: str, output: object) -> None:
     if output is None:
         return
@@ -582,6 +761,9 @@ def _write_automatic_output(function_id: str, output: object) -> None:
         typer.echo("true" if output else "false")
         return
     if isinstance(output, int):
+        typer.echo(str(output))
+        return
+    if isinstance(output, float):
         typer.echo(str(output))
         return
     if isinstance(output, (Mapping, list)):
@@ -671,6 +853,25 @@ def _describe_function_contract(
             "element_type": descriptor.contract.output.element.type,
             "projection": descriptor.contract.output.projection,
         },
+    }
+
+
+def _describe_strand_contract(command: _StrandCommand) -> Mapping[str, object]:
+    descriptor = command.descriptor
+    return {
+        "strand": descriptor.id,
+        "bound": descriptor.bound,
+        "handler": descriptor.handler_id,
+        "input_model": {
+            "uid": str(command.model.uid),
+            "name": command.model.name,
+            "version": command.model.version,
+            "fields": {
+                field_name: {"type": element.type}
+                for field_name, element in command.model.schema.items()
+            },
+        },
+        "output": {"type": descriptor.output_element.type},
     }
 
 

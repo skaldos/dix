@@ -4,7 +4,6 @@ import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
 from uuid import uuid4
 
 from dix.core import NornComponent, StrandDefinition, StrandDescriptor, model_element

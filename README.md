@@ -3,13 +3,14 @@
 Declarative Interface eXecutor.
 
 `dix` provides narrow core capabilities plus trusted, in-process Python compositions and
-applications. The current foundation proves four independent end-to-end paths:
+applications. The current foundation proves five independent end-to-end paths:
 
 ```text
 UI element state/functions -> UI component -> interface -> API -> optional renderer
 trusted module root -> composition spec -> isolated composition graph -> local function API
 component -> composition -> application -> child application -> local function API
 loaded app -> automatic function contract -> one-shot runner -> generated Typer CLI
+model elements -> Norn strand contract -> application knot -> strand-driven Typer CLI
 ```
 
 The project intentionally does **not** include business-specific provisioning logic, AD/LDAP/OIDC,
@@ -39,6 +40,14 @@ PDF generation, a workflow engine, package management, remote plugin admission, 
 - **Function contract**: an immutable projection of each declared runtime function's real Python
   signature into a local input datamodel and output element contract. Projection does not validate
   ordinary direct API calls and does not mutate a global model registry.
+- **Norn**: a composition-scoped Core component that registers typed input/output `Strand`
+  contracts and binds them explicitly to local handlers. Norn does not provide transport,
+  persistence, discovery, authorization, or execution isolation.
+- **Strand**: one named directional contract whose input and output are elements. A private model
+  element lets a whole datamodel form either end without coupling Norn to global model state.
+- **Knot**: a composition role that binds one or more strands to concrete local behavior. The
+  included application knot projects loaded application function contracts into strands and keeps
+  target execution one-shot and owner-scoped.
 - **Renderer**: a presentation adapter. The included HTML/Jinja/HTMX renderer is optional and consumes
   the same interface model under `/render`.
 
@@ -226,6 +235,17 @@ application connects that runner to Typer:
 
 ```bash
 uv run python examples/run_auto_cli.py \
+  acme/cli_demo/tool \
+  render --value hello --count 2 --upper true
+```
+
+`dix/core/knot` projects those same application functions through Norn instead of exposing the
+application runner contract directly. `dix/core/strand_cli` then consumes only the bound strand
+descriptors and calls. This pressure-tests the generic data-delivery boundary while keeping Typer an
+ordinary adapter:
+
+```bash
+uv run python examples/run_strand_cli.py \
   acme/cli_demo/tool \
   render --value hello --count 2 --upper true
 ```
