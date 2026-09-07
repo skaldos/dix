@@ -45,6 +45,13 @@ from .function import (
     invoke_function,
 )
 from .module.component import ModuleComponent, ModuleComponentError
+from .model import (
+    ModelArtifactDefinition,
+    ModelNotLoaded,
+    ModelReference,
+    ModelSpecError,
+    inspect_model_spec,
+)
 from .norn import (
     MODEL_ELEMENT_TYPE,
     NornComponent,
@@ -109,9 +116,13 @@ __all__ = [
     "FunctionInvocationError",
     "FunctionOutputError",
     "ModelDefinition",
+    "ModelArtifactDefinition",
     "ModelIssue",
+    "ModelNotLoaded",
     "ModelNotFound",
+    "ModelReference",
     "ModelResult",
+    "ModelSpecError",
     "ModuleComponent",
     "ModuleComponentError",
     "NornComponent",
@@ -134,6 +145,7 @@ __all__ = [
     "bind_function",
     "create_core_component_registry",
     "inspect_contract_spec",
+    "inspect_model_spec",
     "invoke_function",
     "model_definition",
     "model_element",

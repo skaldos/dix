@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from dix.core.application.models import ApplicationDefinition, LoadedApplicationDefinition
     from dix.core.composition.models import CompositionDefinition, LoadedCompositionDefinition
     from dix.core.contract import ContractDefinition, ContractReference
+    from dix.core.model import ModelArtifactDefinition, ModelReference
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class ModuleInspection:
     id: str
     root: Path
     artifact_digest: str
+    model_definitions: tuple[ModelArtifactDefinition, ...]
     contract_definitions: tuple[ContractDefinition, ...]
     composition_definitions: tuple[CompositionDefinition, ...]
     application_definitions: tuple[ApplicationDefinition, ...]
@@ -28,6 +30,7 @@ class ModuleDescriptor:
     root: Path
     artifact_digest: str
     loaded: bool
+    models: tuple[ModelReference, ...]
     composition_ids: tuple[str, ...]
     application_ids: tuple[str, ...]
     contracts: tuple[ContractReference, ...] = ()
@@ -36,11 +39,13 @@ class ModuleDescriptor:
 @dataclass(frozen=True)
 class LoadedModule:
     inspection: ModuleInspection
+    models: Mapping[ModelReference, ModelArtifactDefinition]
     contracts: Mapping[ContractReference, ContractDefinition]
     compositions: Mapping[str, LoadedCompositionDefinition]
     applications: Mapping[str, LoadedApplicationDefinition]
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "models", MappingProxyType(dict(self.models)))
         object.__setattr__(self, "contracts", MappingProxyType(dict(self.contracts)))
         object.__setattr__(self, "compositions", MappingProxyType(dict(self.compositions)))
         object.__setattr__(self, "applications", MappingProxyType(dict(self.applications)))

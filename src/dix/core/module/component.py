@@ -6,6 +6,7 @@ from pathlib import Path
 from dix.core.application import ApplicationComponent
 from dix.core.composition import CompositionComponent
 from dix.core.contract import ContractDefinition, ContractNotFound, ContractReference
+from dix.core.model import ModelArtifactDefinition, ModelNotLoaded, ModelReference
 
 from .inspection import discover_modules, inspect_module
 from .models import LoadedModule, ModuleDescriptor, ModuleInspection
@@ -29,6 +30,7 @@ class ModuleComponent:
         self._compositions = compositions
         self._applications = applications
         self._modules: dict[str, LoadedModule] = {}
+        self._models: dict[ModelReference, ModelArtifactDefinition] = {}
         self._contracts: dict[ContractReference, ContractDefinition] = {}
 
     def inspect_module(self, root: Path, *, module_id: str) -> ModuleInspection:
@@ -56,6 +58,16 @@ class ModuleComponent:
             )
         if inspection.id in self._modules:
             raise ModuleComponentError(f"module already loaded: {inspection.id}")
+
+        duplicate_models = sorted(
+            {definition.reference for definition in inspection.model_definitions}
+            & self._models.keys()
+        )
+        if duplicate_models:
+            duplicate = duplicate_models[0]
+            raise ModuleComponentError(
+                f"model already loaded: {duplicate.use}@{duplicate.version!r}"
+            )
 
         duplicate_contracts = sorted(
             {definition.reference for definition in inspection.contract_definitions}
@@ -93,6 +105,7 @@ class ModuleComponent:
             root=inspection.root,
             artifact_digest=inspection.artifact_digest,
             loaded=True,
+            models=tuple(definition.reference for definition in inspection.model_definitions),
             contracts=tuple(definition.reference for definition in inspection.contract_definitions),
             composition_ids=tuple(sorted(item.id for item in inspection.composition_definitions)),
             application_ids=tuple(sorted(item.id for item in inspection.application_definitions)),
@@ -102,6 +115,7 @@ class ModuleComponent:
         published_compositions = False
         published_applications = False
         published_contracts = False
+        published_models = False
         try:
             available_contracts = {
                 **self._contracts,
@@ -136,8 +150,17 @@ class ModuleComponent:
                 for definition in inspection.contract_definitions
             )
             published_contracts = True
+            self._models.update(
+                (definition.reference, definition)
+                for definition in inspection.model_definitions
+            )
+            published_models = True
             loaded = LoadedModule(
                 inspection=inspection,
+                models={
+                    definition.reference: definition
+                    for definition in inspection.model_definitions
+                },
                 contracts={
                     definition.reference: definition
                     for definition in inspection.contract_definitions
@@ -152,6 +175,9 @@ class ModuleComponent:
             self._modules[inspection.id] = loaded
             return loaded
         except Exception as exc:
+            if published_models:
+                for definition in inspection.model_definitions:
+                    self._models.pop(definition.reference, None)
             if published_contracts:
                 for definition in inspection.contract_definitions:
                     self._contracts.pop(definition.reference, None)
@@ -209,6 +235,8 @@ class ModuleComponent:
 
         self._applications._unpublish_definitions(tuple(application_ids))
         self._compositions._unpublish_definitions(tuple(composition_ids))
+        for reference in loaded.models:
+            self._models.pop(reference, None)
         for reference in loaded.contracts:
             self._contracts.pop(reference, None)
         del self._modules[module_id]
@@ -221,6 +249,17 @@ class ModuleComponent:
 
     def contracts(self) -> tuple[ContractDefinition, ...]:
         return tuple(self._contracts[reference] for reference in sorted(self._contracts))
+
+    def models(self) -> tuple[ModelArtifactDefinition, ...]:
+        return tuple(self._models[reference] for reference in sorted(self._models))
+
+    def require_model(self, reference: ModelReference) -> ModelArtifactDefinition:
+        try:
+            return self._models[reference]
+        except KeyError as exc:
+            raise ModelNotLoaded(
+                f"model is not loaded: {reference.use}@{reference.version!r}"
+            ) from exc
 
     def require_contract(self, reference: ContractReference) -> ContractDefinition:
         try:
@@ -237,6 +276,7 @@ class ModuleComponent:
                 root=loaded.inspection.root,
                 artifact_digest=loaded.inspection.artifact_digest,
                 loaded=True,
+                models=tuple(loaded.models),
                 contracts=tuple(loaded.contracts),
                 composition_ids=tuple(sorted(loaded.compositions)),
                 application_ids=tuple(sorted(loaded.applications)),
