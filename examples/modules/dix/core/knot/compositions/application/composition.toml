@@ -1,0 +1,21 @@
+[composition]
+id = "application"
+
+[components]
+application = "application"
+norn = "norn"
+
+[functions.bind_application]
+description = "Bind every declared function of one loaded application as a local strand."
+
+[functions.bind_function]
+description = "Bind one loaded application function to an explicit local strand ID."
+
+[functions.describe_strand]
+description = "Describe one strand in this application knot."
+
+[functions.strands]
+description = "Describe every strand in this application knot."
+
+[functions.call]
+description = "Call one bound strand through its technical input and output boundaries."

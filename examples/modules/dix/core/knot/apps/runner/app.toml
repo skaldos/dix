@@ -1,0 +1,20 @@
+[app]
+id = "runner"
+
+[compositions.knot]
+use = "dix/core/knot/application"
+
+[functions.bind_application]
+description = "Bind every function of one loaded application as a local strand."
+
+[functions.bind_function]
+description = "Bind one application function to an explicit local strand ID."
+
+[functions.describe_strand]
+description = "Describe one locally registered strand."
+
+[functions.strands]
+description = "Describe every locally registered strand."
+
+[functions.call]
+description = "Call one locally bound strand."
