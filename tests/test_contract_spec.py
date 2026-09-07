@@ -43,10 +43,56 @@ def test_contract_spec_is_code_free_and_normalized(tmp_path: Path) -> None:
     assert definition.strand.output_element.type == "string"
 
 
-def test_contract_spec_rejects_unknown_element_type(tmp_path: Path) -> None:
+def test_contract_spec_rejects_unqualified_custom_element_type(tmp_path: Path) -> None:
     body = valid_contract().replace('type = "string"', 'type = "custom"', 1)
 
-    with pytest.raises(ContractSpecError, match="not a core element type"):
+    with pytest.raises(ContractSpecError, match="core type or namespaced custom type"):
+        inspect_contract_spec(write_contract(tmp_path, body), module_id="acme/contracts")
+
+
+def test_contract_spec_preserves_namespaced_custom_element_type(tmp_path: Path) -> None:
+    body = valid_contract().replace('type = "string"', 'type = "acme/custom"', 1)
+
+    definition = inspect_contract_spec(
+        write_contract(tmp_path, body),
+        module_id="acme/contracts",
+    )
+
+    assert definition.strand.input_element.type == "acme/custom"
+
+
+def test_contract_spec_preserves_code_free_model_reference(tmp_path: Path) -> None:
+    body = valid_contract().replace(
+        '[input]\ntype = "string"',
+        '[input]\ntype = "model"\nuse = "acme/models/request"\nversion = "2"',
+    )
+
+    definition = inspect_contract_spec(
+        write_contract(tmp_path, body),
+        module_id="acme/contracts",
+    )
+
+    assert definition.strand.input_element.type == "model"
+    assert definition.model_references[0].use == "acme/models/request"
+    assert definition.model_references[0].version == "2"
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ('type = "model"', "input.use"),
+        ('type = "model"\nuse = "acme/models/request"\nconfig = {}', "not allowed"),
+        ('type = "string"\nuse = "acme/models/request"', "require type"),
+    ],
+)
+def test_contract_spec_rejects_invalid_model_endpoint(
+    tmp_path: Path,
+    replacement: str,
+    message: str,
+) -> None:
+    body = valid_contract().replace('type = "string"', replacement, 1)
+
+    with pytest.raises(ContractSpecError, match=message):
         inspect_contract_spec(write_contract(tmp_path, body), module_id="acme/contracts")
 
 

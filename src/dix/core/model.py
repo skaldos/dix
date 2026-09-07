@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from dix.core.datamodel import ModelDefinition
-from dix.core.element import ElementSpec
+from dix.core.element import CORE_ELEMENT_TYPES, ElementSpec
 from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import canonical_file, normalize_local_id, normalize_module_id
 
@@ -26,12 +26,16 @@ class ModelReference:
     version: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.use, str) or "/" not in self.use:
+            raise ValueError(f"model reference must be namespaced: {self.use!r}")
         try:
             use = normalize_module_id(self.use)
         except ModuleSpecError as exc:
             raise ValueError(f"invalid model reference: {self.use!r}") from exc
         version = self.version
         if version is not None:
+            if not isinstance(version, str):
+                raise ValueError("model reference version must be a string")
             version = version.strip()
             if not version:
                 raise ValueError("model reference version must not be empty")
@@ -90,9 +94,25 @@ def inspect_model_spec(path: Path, *, module_id: str) -> ModelArtifactDefinition
         field_name = raw_name.strip()
         if not field_name:
             raise ModelSpecError("model field name must not be empty")
+        if field_name in schema:
+            raise ModelSpecError(f"duplicate model field: {field_name}")
         field = _mapping(raw_field, f"fields.{field_name}")
         _reject_unknown(field, {"type", "config"}, f"fields.{field_name}")
         type_name = _string(field.get("type"), f"fields.{field_name}.type")
+        if type_name == "model":
+            raise ModelSpecError(
+                f"fields.{field_name}.type model references are not supported in v1"
+            )
+        if type_name not in CORE_ELEMENT_TYPES and "/" not in type_name:
+            raise ModelSpecError(
+                f"fields.{field_name}.type must be a core type or namespaced custom type: "
+                f"{type_name}"
+            )
+        if type_name not in CORE_ELEMENT_TYPES:
+            try:
+                type_name = normalize_module_id(type_name)
+            except ModuleSpecError as exc:
+                raise ModelSpecError(f"invalid fields.{field_name}.type: {exc}") from exc
         config = _mapping(field.get("config", {}), f"fields.{field_name}.config")
         schema[field_name] = ElementSpec(type_name, config)
 

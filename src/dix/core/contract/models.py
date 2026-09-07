@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dix.core.norn import StrandDefinition
+from dix.core.model import ModelReference
 
 
 @dataclass(frozen=True, order=True)
@@ -36,3 +37,12 @@ class ContractDefinition:
     @property
     def reference(self) -> ContractReference:
         return ContractReference(self.id, self.version)
+
+    @property
+    def model_references(self) -> tuple[ModelReference, ...]:
+        references: set[ModelReference] = set()
+        for element in (self.strand.input_element, self.strand.output_element):
+            reference = element.config.get("reference") if element.type == "model" else None
+            if isinstance(reference, ModelReference):
+                references.add(reference)
+        return tuple(sorted(references))

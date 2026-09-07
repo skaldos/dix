@@ -56,6 +56,20 @@ def test_model_spec_preserves_unresolved_element_declaration(tmp_path: Path) -> 
     assert definition.definition.schema["name"].type == "acme/encrypted"
 
 
+def test_model_spec_rejects_unqualified_custom_element_declaration(tmp_path: Path) -> None:
+    body = valid_model().replace('type = "string"', 'type = "encrypted"', 1)
+
+    with pytest.raises(ModelSpecError, match="core type or namespaced custom type"):
+        inspect_model_spec(write_model(tmp_path, body), module_id="acme/models")
+
+
+def test_model_spec_rejects_nested_model_reference_in_v1(tmp_path: Path) -> None:
+    body = valid_model().replace('type = "string"', 'type = "model"', 1)
+
+    with pytest.raises(ModelSpecError, match="not supported in v1"):
+        inspect_model_spec(write_model(tmp_path, body), module_id="acme/models")
+
+
 @pytest.mark.parametrize(
     ("body", "message"),
     [

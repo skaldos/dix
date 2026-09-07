@@ -117,6 +117,19 @@ class ModuleComponent:
         published_contracts = False
         published_models = False
         try:
+            available_models = {
+                **self._models,
+                **{
+                    definition.reference: definition
+                    for definition in inspection.model_definitions
+                },
+            }
+            for contract in inspection.contract_definitions:
+                for reference in contract.model_references:
+                    if reference not in available_models:
+                        raise ModelNotLoaded(
+                            f"model is not loaded: {reference.use}@{reference.version!r}"
+                        )
             available_contracts = {
                 **self._contracts,
                 **{
@@ -196,7 +209,20 @@ class ModuleComponent:
         loaded = self.require_module(module_id)
         composition_ids = set(loaded.compositions)
         application_ids = set(loaded.applications)
+        model_references = set(loaded.models)
         contract_references = set(loaded.contracts)
+        model_blockers: list[str] = []
+        for candidate in self._modules.values():
+            if candidate.inspection.id == module_id:
+                continue
+            for contract in candidate.contracts.values():
+                for reference in contract.model_references:
+                    if reference in model_references:
+                        model_blockers.append(
+                            f"loaded contract '{contract.id}' from module "
+                            f"'{candidate.inspection.id}' requires model "
+                            f"'{reference.use}@{reference.version!r}' from module '{module_id}'"
+                        )
         contract_blockers: list[str] = []
         for definition in self._compositions._definitions.values():
             if definition.definition.id in composition_ids:
@@ -219,6 +245,7 @@ class ModuleComponent:
                         f"'{function.binding.contract.id}' from module '{module_id}'"
                     )
         blockers = (
+            *model_blockers,
             *contract_blockers,
             *self._compositions._unload_blockers(module_id, composition_ids),
             *self._applications._unload_blockers(

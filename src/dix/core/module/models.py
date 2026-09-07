@@ -30,10 +30,10 @@ class ModuleDescriptor:
     root: Path
     artifact_digest: str
     loaded: bool
-    models: tuple[ModelReference, ...]
     composition_ids: tuple[str, ...]
     application_ids: tuple[str, ...]
     contracts: tuple[ContractReference, ...] = ()
+    models: tuple[ModelReference, ...] = ()
 
 
 @dataclass(frozen=True)

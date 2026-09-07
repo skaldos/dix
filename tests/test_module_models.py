@@ -27,6 +27,28 @@ def model_module(root: Path, *, field_type: str = "string") -> Path:
     return root
 
 
+def contract_module(
+    root: Path,
+    *,
+    model_use: str,
+    model_version: str = "1",
+) -> Path:
+    path = root / "contracts" / "process" / "contract.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '[contract]\n'
+        'id = "process"\n'
+        'version = "1"\n\n'
+        '[input]\n'
+        'type = "model"\n'
+        f'use = "{model_use}"\n'
+        f'version = "{model_version}"\n\n'
+        '[output]\n'
+        'type = "string"\n'
+    )
+    return root
+
+
 def components() -> tuple[ModuleComponent, CompositionComponent]:
     registry = create_core_component_registry()
     return (
@@ -82,3 +104,63 @@ def test_later_definition_failure_does_not_publish_staged_model(tmp_path: Path) 
     assert modules.models() == ()
     assert modules.modules() == ()
     assert compositions.definitions() == ()
+
+
+def test_contract_can_reference_model_from_same_module(tmp_path: Path) -> None:
+    modules, _ = components()
+    root = model_module(tmp_path / "module")
+    contract_module(root, model_use="acme/bundle/request")
+
+    loaded = modules.load_module(root, module_id="acme/bundle")
+
+    contract = next(iter(loaded.contracts.values()))
+    assert contract.model_references == (ModelReference("acme/bundle/request", "1"),)
+
+
+def test_missing_model_reference_rolls_back_whole_module(tmp_path: Path) -> None:
+    modules, _ = components()
+    root = model_module(tmp_path / "module")
+    contract_module(root, model_use="acme/missing/request")
+
+    with pytest.raises(ModuleComponentError, match="model is not loaded"):
+        modules.load_module(root, module_id="acme/bundle")
+
+    assert modules.models() == ()
+    assert modules.contracts() == ()
+    assert modules.modules() == ()
+
+
+def test_model_provider_cannot_unload_while_foreign_contract_uses_it(
+    tmp_path: Path,
+) -> None:
+    modules, _ = components()
+    provider = model_module(tmp_path / "provider")
+    consumer = contract_module(
+        tmp_path / "consumer",
+        model_use="acme/models/request",
+    )
+    modules.load_module(provider, module_id="acme/models")
+    modules.load_module(consumer, module_id="acme/contracts")
+
+    with pytest.raises(ModuleComponentError, match="requires model"):
+        modules.unload_module("acme/models")
+
+    modules.unload_module("acme/contracts")
+    modules.unload_module("acme/models")
+    assert modules.modules() == ()
+
+
+def test_model_reference_version_resolution_is_exact(tmp_path: Path) -> None:
+    modules, _ = components()
+    provider = model_module(tmp_path / "provider")
+    consumer = contract_module(
+        tmp_path / "consumer",
+        model_use="acme/models/request",
+        model_version="2",
+    )
+    modules.load_module(provider, module_id="acme/models")
+
+    with pytest.raises(ModuleComponentError, match="model is not loaded"):
+        modules.load_module(consumer, module_id="acme/contracts")
+
+    assert [item.inspection.id for item in modules.modules()] == ["acme/models"]

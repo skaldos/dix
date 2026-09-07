@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from dix.core.element import CORE_ELEMENT_TYPES, ElementSpec
+from dix.core.model import ModelReference
 from dix.core.module.validation import canonical_file, normalize_local_id, normalize_module_id
 from dix.core.norn import StrandDefinition
 
@@ -59,10 +60,33 @@ def inspect_contract_spec(path: Path, *, module_id: str) -> ContractDefinition:
 
 def _element(raw: object, label: str) -> ElementSpec:
     value = _mapping(raw, label)
-    _reject_unknown(value, {"type", "config"}, label)
+    _reject_unknown(value, {"type", "config", "use", "version"}, label)
     type_name = _string(value.get("type"), f"{label}.type")
+    if type_name == "model":
+        if "config" in value:
+            raise ContractSpecError(f"{label}.config is not allowed for a model reference")
+        use = _string(value.get("use"), f"{label}.use")
+        version = value.get("version")
+        if version is not None:
+            version = _string(version, f"{label}.version")
+        try:
+            reference = ModelReference(use, version)
+        except ValueError as exc:
+            raise ContractSpecError(f"invalid {label} model reference: {exc}") from exc
+        return ElementSpec("model", {"reference": reference})
+    if "use" in value or "version" in value:
+        raise ContractSpecError(
+            f"{label}.use and {label}.version require type = 'model'"
+        )
+    if type_name not in CORE_ELEMENT_TYPES and "/" not in type_name:
+        raise ContractSpecError(
+            f"{label}.type must be a core type or namespaced custom type: {type_name}"
+        )
     if type_name not in CORE_ELEMENT_TYPES:
-        raise ContractSpecError(f"{label}.type is not a core element type: {type_name}")
+        try:
+            type_name = normalize_module_id(type_name)
+        except ModuleSpecError as exc:
+            raise ContractSpecError(f"invalid {label}.type: {exc}") from exc
     config = _mapping(value.get("config", {}), f"{label}.config")
     return ElementSpec(type_name, config)
 
