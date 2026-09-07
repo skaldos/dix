@@ -12,3 +12,6 @@ Rules:
 - permanent examples belong under `examples`.
 - synthetic test fixtures belong under `tests/fixtures`.
 - promotion is an explicit review decision, not an automatic release action.
+
+Historical tests that exercise unstable modules live under `unstable/tests`. They are preserved as
+reference and migration evidence but are not part of the supported core regression suite.

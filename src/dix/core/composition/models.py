@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-from dix.core.function import FunctionContract
+from dix.core.function import FunctionDescriptor
 
 if TYPE_CHECKING:
     from dix.core.module.models import ModuleDescriptor
@@ -122,16 +121,10 @@ class CompositionInstanceSpec:
 
 
 @dataclass(frozen=True)
-class CompositionFunctionDescriptor:
-    id: str
-    composition_id: str
-    source: Literal["local", "local_wrapper"]
-    origin: str | None
-    signature: inspect.Signature
-    return_annotation: object
-    docstring: str | None
-    contract: FunctionContract
-    is_async: bool = False
+class CompositionFunctionDescriptor(FunctionDescriptor):
+    @property
+    def composition_id(self) -> str:
+        return self.owner_id
 
 
 @dataclass(frozen=True)

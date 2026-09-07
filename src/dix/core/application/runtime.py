@@ -5,8 +5,6 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from dix.core.function import derive_function_contract
-
 from .models import (
     ApplicationDefinition,
     ApplicationFunctionDescriptor,
@@ -115,16 +113,13 @@ def describe_runtime_functions(
         descriptors.append(
             ApplicationFunctionDescriptor(
                 id=function_id,
-                application_id=definition.id,
+                owner_id=definition.id,
                 source="local_wrapper" if origin is not None else "local",
                 origin=origin,
                 signature=public_signature,
                 return_annotation=public_signature.return_annotation,
                 docstring=inspect.getdoc(function),
                 is_async=inspect.iscoroutinefunction(function),
-                contract=derive_function_contract(
-                    definition.id, function_id, public_signature
-                ),
             )
         )
     return tuple(descriptors)

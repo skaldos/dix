@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,7 +7,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from dix.core.composition.models import CompositionDependencySpec
-from dix.core.function import FunctionContract
+from dix.core.function import FunctionDescriptor
 
 if TYPE_CHECKING:
     from dix.core.composition.models import CompositionInstance
@@ -98,16 +97,10 @@ class ApplicationDependencyGraph:
 
 
 @dataclass(frozen=True)
-class ApplicationFunctionDescriptor:
-    id: str
-    application_id: str
-    source: Literal["local", "local_wrapper"]
-    origin: str | None
-    signature: inspect.Signature
-    return_annotation: object
-    docstring: str | None
-    contract: FunctionContract
-    is_async: bool = False
+class ApplicationFunctionDescriptor(FunctionDescriptor):
+    @property
+    def application_id(self) -> str:
+        return self.owner_id
 
 
 @dataclass(frozen=True)
