@@ -2,6 +2,13 @@
 
 from .application import ApplicationComponent, ApplicationComponentError
 from .composition import CompositionComponent, CompositionComponentError
+from .contract import (
+    ContractDefinition,
+    ContractNotFound,
+    ContractReference,
+    ContractSpecError,
+    inspect_contract_spec,
+)
 from .datamodel import (
     DatamodelComponent,
     DatamodelError,
@@ -26,6 +33,13 @@ from .element import (
     ElementTypeDescriptor,
     UnknownElementType,
 )
+from .function import (
+    FunctionContract,
+    FunctionParameterDescriptor,
+    FunctionProjection,
+    FunctionValueContract,
+    derive_function_contract,
+)
 from .module.component import ModuleComponent, ModuleComponentError
 from .norn import (
     MODEL_ELEMENT_TYPE,
@@ -46,13 +60,6 @@ from .norn import (
     model_definition,
     model_element,
 )
-from .function import (
-    FunctionContract,
-    FunctionParameterDescriptor,
-    FunctionProjection,
-    FunctionValueContract,
-    derive_function_contract,
-)
 from .registry import (
     ComponentLifetime,
     ComponentProvider,
@@ -63,6 +70,7 @@ from .registry import (
 )
 
 __all__ = [
+    "MODEL_ELEMENT_TYPE",
     "ApplicationComponent",
     "ApplicationComponentError",
     "ComponentLifetime",
@@ -72,6 +80,10 @@ __all__ = [
     "ComponentScope",
     "CompositionComponent",
     "CompositionComponentError",
+    "ContractDefinition",
+    "ContractNotFound",
+    "ContractReference",
+    "ContractSpecError",
     "DatamodelComponent",
     "DatamodelError",
     "ElementBinding",
@@ -93,14 +105,13 @@ __all__ = [
     "ModelIssue",
     "ModelNotFound",
     "ModelResult",
-    "MODEL_ELEMENT_TYPE",
     "ModuleComponent",
     "ModuleComponentError",
     "NornComponent",
     "NornError",
-    "RegisteredStrand",
     "RegisteredModel",
     "RegisteredModelDescriptor",
+    "RegisteredStrand",
     "StrandBinding",
     "StrandDefinition",
     "StrandDefinitionError",
@@ -115,6 +126,7 @@ __all__ = [
     "UnknownElementType",
     "create_core_component_registry",
     "derive_function_contract",
+    "inspect_contract_spec",
     "model_definition",
     "model_element",
 ]

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Protocol
+from typing import Any, Literal, Protocol
 
 ElementBindingMode = Literal["define", "wrap", "replace"]
 ElementTypeSource = Literal["core", "extension", "model"]
+CORE_ELEMENT_TYPES = (
+    "any",
+    "array",
+    "binary",
+    "boolean",
+    "integer",
+    "null",
+    "number",
+    "object",
+    "string",
+)
 
 
 class ElementError(Exception):

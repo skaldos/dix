@@ -5,6 +5,7 @@ from pathlib import Path
 
 from dix.core.application import ApplicationComponent
 from dix.core.composition import CompositionComponent
+from dix.core.contract import ContractDefinition, ContractNotFound, ContractReference
 
 from .inspection import discover_modules, inspect_module
 from .models import LoadedModule, ModuleDescriptor, ModuleInspection
@@ -28,6 +29,7 @@ class ModuleComponent:
         self._compositions = compositions
         self._applications = applications
         self._modules: dict[str, LoadedModule] = {}
+        self._contracts: dict[ContractReference, ContractDefinition] = {}
 
     def inspect_module(self, root: Path, *, module_id: str) -> ModuleInspection:
         return inspect_module(root, module_id=module_id)
@@ -55,6 +57,16 @@ class ModuleComponent:
         if inspection.id in self._modules:
             raise ModuleComponentError(f"module already loaded: {inspection.id}")
 
+        duplicate_contracts = sorted(
+            {definition.reference for definition in inspection.contract_definitions}
+            & self._contracts.keys()
+        )
+        if duplicate_contracts:
+            duplicate = duplicate_contracts[0]
+            raise ModuleComponentError(
+                f"contract already loaded: {duplicate.use}@{duplicate.version!r}"
+            )
+
         loaded_composition_ids = {item.id for item in self._compositions.definitions()}
         loaded_application_ids = {item.id for item in self._applications.definitions()}
         duplicate_compositions = sorted(
@@ -81,6 +93,7 @@ class ModuleComponent:
             root=inspection.root,
             artifact_digest=inspection.artifact_digest,
             loaded=True,
+            contracts=tuple(definition.reference for definition in inspection.contract_definitions),
             composition_ids=tuple(sorted(item.id for item in inspection.composition_definitions)),
             application_ids=tuple(sorted(item.id for item in inspection.application_definitions)),
         )
@@ -88,6 +101,7 @@ class ModuleComponent:
         staged_applications = {}
         published_compositions = False
         published_applications = False
+        published_contracts = False
         try:
             staged_compositions = self._compositions._stage_definitions(
                 inspection.composition_definitions,
@@ -108,8 +122,17 @@ class ModuleComponent:
             published_compositions = True
             self._applications._publish_definitions(staged_applications)
             published_applications = True
+            self._contracts.update(
+                (definition.reference, definition)
+                for definition in inspection.contract_definitions
+            )
+            published_contracts = True
             loaded = LoadedModule(
                 inspection=inspection,
+                contracts={
+                    definition.reference: definition
+                    for definition in inspection.contract_definitions
+                },
                 compositions={
                     item: staged_compositions[item] for item in sorted(staged_compositions)
                 },
@@ -120,6 +143,9 @@ class ModuleComponent:
             self._modules[inspection.id] = loaded
             return loaded
         except Exception as exc:
+            if published_contracts:
+                for definition in inspection.contract_definitions:
+                    self._contracts.pop(definition.reference, None)
             if published_applications:
                 self._applications._unpublish_definitions(tuple(staged_applications))
             if published_compositions:
@@ -151,6 +177,8 @@ class ModuleComponent:
 
         self._applications._unpublish_definitions(tuple(application_ids))
         self._compositions._unpublish_definitions(tuple(composition_ids))
+        for reference in loaded.contracts:
+            self._contracts.pop(reference, None)
         del self._modules[module_id]
         self._applications._discard_staged_definitions(loaded.applications)
         self._compositions._discard_staged_definitions(loaded.compositions)
@@ -159,6 +187,17 @@ class ModuleComponent:
     def modules(self) -> tuple[LoadedModule, ...]:
         return tuple(self._modules[item] for item in sorted(self._modules))
 
+    def contracts(self) -> tuple[ContractDefinition, ...]:
+        return tuple(self._contracts[reference] for reference in sorted(self._contracts))
+
+    def require_contract(self, reference: ContractReference) -> ContractDefinition:
+        try:
+            return self._contracts[reference]
+        except KeyError as exc:
+            raise ContractNotFound(
+                f"contract is not loaded: {reference.use}@{reference.version!r}"
+            ) from exc
+
     def module_descriptors(self) -> tuple[ModuleDescriptor, ...]:
         return tuple(
             ModuleDescriptor(
@@ -166,6 +205,7 @@ class ModuleComponent:
                 root=loaded.inspection.root,
                 artifact_digest=loaded.inspection.artifact_digest,
                 loaded=True,
+                contracts=tuple(loaded.contracts),
                 composition_ids=tuple(sorted(loaded.compositions)),
                 application_ids=tuple(sorted(loaded.applications)),
             )

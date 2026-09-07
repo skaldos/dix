@@ -166,6 +166,10 @@ def _module_payload(descriptor) -> dict[str, Any]:
         "root": str(descriptor.root),
         "artifact_digest": descriptor.artifact_digest,
         "loaded": descriptor.loaded,
+        "contracts": [
+            {"use": reference.use, "version": reference.version}
+            for reference in descriptor.contracts
+        ],
         "composition_ids": list(descriptor.composition_ids),
         "application_ids": list(descriptor.application_ids),
     }
@@ -195,6 +199,24 @@ def _composition_definition_payload(definition) -> dict[str, Any]:
                 "export": function.export,
             }
             for name, function in definition.functions.items()
+        },
+    }
+
+
+def _contract_definition_payload(definition) -> dict[str, Any]:
+    return {
+        "id": definition.id,
+        "local_id": definition.local_id,
+        "module_id": definition.module_id,
+        "version": definition.version,
+        "spec_path": str(definition.spec_path),
+        "input": {
+            "type": definition.strand.input_element.type,
+            "config": dict(definition.strand.input_element.config),
+        },
+        "output": {
+            "type": definition.strand.output_element.type,
+            "config": dict(definition.strand.output_element.config),
         },
     }
 
@@ -293,6 +315,9 @@ def cmd_module(args: argparse.Namespace) -> int:
             "id": inspection.id,
             "root": str(inspection.root),
             "artifact_digest": inspection.artifact_digest,
+            "contract_definitions": [
+                _contract_definition_payload(item) for item in inspection.contract_definitions
+            ],
             "composition_definitions": [
                 _composition_definition_payload(item) for item in inspection.composition_definitions
             ],
