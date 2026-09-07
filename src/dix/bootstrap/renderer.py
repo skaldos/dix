@@ -58,16 +58,16 @@ def _run(arguments: list[str]) -> int:
         primary_error = exc
         raise
     finally:
-        cleanup_errors: list[BaseException] = []
+        cleanup_errors: list[Exception] = []
         if application_created:
             try:
                 application_component.destroy_instance(owner_scope_id, instance_id)
-            except BaseException as exc:
+            except Exception as exc:
                 cleanup_errors.append(exc)
         for module_id in reversed(loaded_module_ids):
             try:
                 module_component.unload_module(module_id)
-            except BaseException as exc:
+            except Exception as exc:
                 cleanup_errors.append(exc)
         if cleanup_errors:
             if primary_error is None:

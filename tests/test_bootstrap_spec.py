@@ -8,9 +8,19 @@ from dix.bootstrap import LauncherSpecError, load_launcher_spec, render_launcher
 
 
 def write_module(root: Path, *, application_id: str = "main") -> Path:
+    contract = root / "contracts" / "entry"
+    contract.mkdir(parents=True)
+    (contract / "contract.toml").write_text(
+        '[contract]\nid = "entry"\nversion = "1"\n\n'
+        '[input]\ntype = "array"\n\n[output]\ntype = "integer"\n'
+    )
     application = root / "apps" / application_id
     application.mkdir(parents=True)
-    (application / "app.toml").write_text(f'[app]\nid = "{application_id}"\n')
+    (application / "app.toml").write_text(
+        f'[app]\nid = "{application_id}"\n\n'
+        '[functions.main]\n[functions.main.contract]\n'
+        'use = "acme/example/entry"\nversion = "1"\n'
+    )
     (application / "runtime.py").write_text(
         "class Runtime:\n"
         "    def __init__(self, *, context, config):\n"
@@ -100,6 +110,24 @@ def test_launcher_spec_requires_application_from_configured_modules(tmp_path: Pa
     )
 
     with pytest.raises(LauncherSpecError, match="application is not provided"):
+        load_launcher_spec(spec)
+
+
+def test_launcher_spec_requires_declared_entry_function(tmp_path: Path) -> None:
+    write_module(tmp_path / "module")
+    spec = write_spec(tmp_path / "launcher.toml", "module", function="missing")
+
+    with pytest.raises(LauncherSpecError, match="function is not declared"):
+        load_launcher_spec(spec)
+
+
+def test_python_cli_requires_array_to_integer_contract(tmp_path: Path) -> None:
+    module = write_module(tmp_path / "module")
+    contract = module / "contracts" / "entry" / "contract.toml"
+    contract.write_text(contract.read_text().replace('type = "integer"', 'type = "string"'))
+    spec = write_spec(tmp_path / "launcher.toml", "module")
+
+    with pytest.raises(LauncherSpecError, match="must be array -> integer"):
         load_launcher_spec(spec)
 
 

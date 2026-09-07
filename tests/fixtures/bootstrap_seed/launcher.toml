@@ -1,0 +1,9 @@
+[launcher]
+name = "bootstrap-test"
+adapter = "python_cli"
+application = "acme/bootstrap_seed/main"
+function = "main"
+
+[[modules]]
+id = "acme/bootstrap_seed"
+source = "module"
