@@ -1,0 +1,11 @@
+[composition]
+id = "local"
+
+[compositions.models]
+use = "dix/state/models"
+
+[functions.get]
+description = "Return a detached dump of the complete local state value."
+
+[functions.set]
+description = "Validate and replace the complete local state value, reporting whether it changed."

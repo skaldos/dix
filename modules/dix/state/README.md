@@ -50,3 +50,19 @@ description metadata. `object` and `array` intentionally remain unstructured in 
 
 The resolver only constructs a model type. The caller owns values, sources, errors, merge rules,
 and lifecycle. Every call constructs an independent model type; there is no registry or cache.
+
+The `dix/state/local` composition builds on `dix/state/models`. One instance binds exactly one
+owner-relative TOML model specification and an optional initial mapping:
+
+```toml
+[compositions.state]
+use = "dix/state/local"
+config = { model = "state_model.toml", initial = {} }
+export = ["get", "set"]
+```
+
+`get()` returns a detached dump of the complete validated value. `set(values)` validates and
+replaces a complete candidate, returning whether its normalized value changed. Validation errors
+leave the previous value untouched. The composition has no actions, events, value source,
+persistence, registry, partial updates, or model API; owners add such behavior with normal DIX
+wrappers only when they need it.
