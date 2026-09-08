@@ -38,11 +38,13 @@ def test_wheel_contains_optional_first_party_cli_module(tmp_path: Path) -> None:
     } <= names
     assert not any(name.startswith("unstable/") for name in names)
     assert "cli" in metadata.get_all("Provides-Extra", [])
-    typer_requirements = [
-        item for item in metadata.get_all("Requires-Dist", []) if item.startswith("typer")
-    ]
-    assert len(typer_requirements) == 1
-    assert "extra == 'cli'" in typer_requirements[0]
+    optional_requirements = metadata.get_all("Requires-Dist", [])
+    for dependency in ("click", "typer"):
+        requirements = [
+            item for item in optional_requirements if item.startswith(dependency)
+        ]
+        assert len(requirements) == 1
+        assert "extra == 'cli'" in requirements[0]
 
 
 def test_base_project_metadata_has_no_required_runtime_dependency() -> None:
