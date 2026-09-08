@@ -1,2 +1,5 @@
 [composition]
 id = "typer"
+
+[functions.invoke]
+description = "Invoke explicitly grouped application APIs as one Typer command tree."
