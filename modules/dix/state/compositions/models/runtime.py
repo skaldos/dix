@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dix.core.composition import CompositionRuntimeContext
 
-ConfigTypeName = Literal[
+StateTypeName = Literal[
     "any",
     "string",
     "integer",
@@ -34,19 +34,19 @@ _PRIMITIVE_TYPES: dict[str, object] = {
 }
 
 
-class ConfigModelSpecError(ValueError):
-    """Raised when a declarative config model specification is structurally invalid."""
+class StateModelSpecError(ValueError):
+    """Raised when a declarative state model specification is structurally invalid."""
 
 
 @dataclass(frozen=True, slots=True)
-class ConfigFieldSpec:
-    """Normalized immutable description of one config field."""
+class StateFieldSpec:
+    """Normalized immutable description of one state field."""
 
     name: str
-    type: ConfigTypeName
+    type: StateTypeName
     default: object = _MISSING
     description: str | None = None
-    model: ConfigModelSpec | None = None
+    model: StateModelSpec | None = None
 
     @property
     def required(self) -> bool:
@@ -54,11 +54,11 @@ class ConfigFieldSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class ConfigModelSpec:
-    """Normalized immutable description of one config model."""
+class StateModelSpec:
+    """Normalized immutable description of one state model."""
 
     name: str
-    fields: tuple[ConfigFieldSpec, ...]
+    fields: tuple[StateFieldSpec, ...]
 
 
 class Runtime:
@@ -74,16 +74,16 @@ class Runtime:
         self.config = config
 
     def resolve(self, spec: Mapping[str, object]) -> type[BaseModel]:
-        """Resolve a declarative config model specification into a Pydantic model type."""
+        """Resolve a declarative state model specification into a Pydantic model type."""
         return _build_model(_normalize_model(spec, location="model"))
 
 
-def _normalize_model(spec: Mapping[str, object], *, location: str) -> ConfigModelSpec:
+def _normalize_model(spec: Mapping[str, object], *, location: str) -> StateModelSpec:
     mapping = _mapping(spec, location)
     _reject_unknown_keys(mapping, _MODEL_KEYS, location)
     name = _nonempty_string(mapping.get("name"), f"{location}.name")
     fields_mapping = _mapping(mapping.get("fields"), f"{location}.fields")
-    fields: list[ConfigFieldSpec] = []
+    fields: list[StateFieldSpec] = []
     for field_name, field_value in fields_mapping.items():
         normalized_name = _nonempty_string(field_name, f"{location}.fields key")
         fields.append(
@@ -93,14 +93,14 @@ def _normalize_model(spec: Mapping[str, object], *, location: str) -> ConfigMode
                 location=f"{location}.fields.{normalized_name}",
             )
         )
-    return ConfigModelSpec(name=name, fields=tuple(fields))
+    return StateModelSpec(name=name, fields=tuple(fields))
 
 
-def _normalize_field(name: str, value: object, *, location: str) -> ConfigFieldSpec:
+def _normalize_field(name: str, value: object, *, location: str) -> StateFieldSpec:
     mapping = _mapping(value, location)
     type_name = _nonempty_string(mapping.get("type"), f"{location}.type")
     if type_name not in {*_PRIMITIVE_TYPES, "model"}:
-        raise ConfigModelSpecError(f"{location}.type has unsupported value: {type_name}")
+        raise StateModelSpecError(f"{location}.type has unsupported value: {type_name}")
     description_value = mapping.get("help")
     description = (
         None
@@ -115,7 +115,7 @@ def _normalize_field(name: str, value: object, *, location: str) -> ConfigFieldS
             {"name": mapping.get("name"), "fields": mapping.get("fields")},
             location=f"{location}.model",
         )
-        return ConfigFieldSpec(
+        return StateFieldSpec(
             name=name,
             type="model",
             default=default,
@@ -124,7 +124,7 @@ def _normalize_field(name: str, value: object, *, location: str) -> ConfigFieldS
         )
 
     _reject_unknown_keys(mapping, _FIELD_KEYS, location)
-    return ConfigFieldSpec(
+    return StateFieldSpec(
         name=name,
         type=type_name,  # type: ignore[arg-type]
         default=default,
@@ -132,7 +132,7 @@ def _normalize_field(name: str, value: object, *, location: str) -> ConfigFieldS
     )
 
 
-def _build_model(spec: ConfigModelSpec) -> type[BaseModel]:
+def _build_model(spec: StateModelSpec) -> type[BaseModel]:
     definitions: dict[str, tuple[object, object]] = {}
     for field in spec.fields:
         annotation = (
@@ -152,21 +152,21 @@ def _build_model(spec: ConfigModelSpec) -> type[BaseModel]:
             **definitions,
         )
     except Exception as exc:
-        raise ConfigModelSpecError(f"cannot create config model '{spec.name}': {exc}") from exc
+        raise StateModelSpecError(f"cannot create state model '{spec.name}': {exc}") from exc
 
 
 def _mapping(value: object, location: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
-        raise ConfigModelSpecError(f"{location} must be a mapping")
+        raise StateModelSpecError(f"{location} must be a mapping")
     for key in value:
         if not isinstance(key, str):
-            raise ConfigModelSpecError(f"{location} keys must be strings")
+            raise StateModelSpecError(f"{location} keys must be strings")
     return value
 
 
 def _nonempty_string(value: object, location: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ConfigModelSpecError(f"{location} must be a non-empty string")
+        raise StateModelSpecError(f"{location} must be a non-empty string")
     return value.strip()
 
 
@@ -177,4 +177,4 @@ def _reject_unknown_keys(
 ) -> None:
     unknown = sorted(set(mapping) - allowed)
     if unknown:
-        raise ConfigModelSpecError(f"{location} contains unknown keys: {', '.join(unknown)}")
+        raise StateModelSpecError(f"{location} contains unknown keys: {', '.join(unknown)}")

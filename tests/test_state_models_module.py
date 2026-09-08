@@ -18,9 +18,9 @@ def _resolve(tmp_path: Path) -> Callable[[Mapping[str, object]], type[BaseModel]
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
-    modules.load_module(first_party_module_path("dix/config"), module_id="dix/config")
+    modules.load_module(first_party_module_path("dix/state"), module_id="dix/state")
     instance = compositions.create_instance(
-        CompositionInstanceSpec("config", "dix/config/pydantic", {}, tmp_path),
+        CompositionInstanceSpec("models", "dix/state/models", {}, tmp_path),
         owner_scope_id="test",
     )
     return instance.api.require("resolve")
@@ -28,7 +28,7 @@ def _resolve(tmp_path: Path) -> Callable[[Mapping[str, object]], type[BaseModel]
 
 def _complete_spec() -> dict[str, object]:
     return {
-        "name": "ServiceConfig",
+        "name": "ServiceState",
         "fields": {
             "anything": {"type": "any", "default": None},
             "title": {"type": "string", "help": "Human-readable service title."},
@@ -39,7 +39,7 @@ def _complete_spec() -> dict[str, object]:
             "items": {"type": "array", "default": []},
             "renderer": {
                 "type": "model",
-                "name": "RendererConfig",
+                "name": "RendererState",
                 "fields": {
                     "upper": {"type": "boolean", "default": False},
                     "label": {"type": "string"},
@@ -54,7 +54,7 @@ def test_resolve_builds_real_model_with_all_types_and_metadata(tmp_path: Path) -
     model = resolve(_complete_spec())
 
     assert issubclass(model, BaseModel)
-    assert model.__name__ == "ServiceConfig"
+    assert model.__name__ == "ServiceState"
     assert model.model_config["validate_default"] is True
     assert model.model_fields["title"].is_required()
     assert model.model_fields["title"].description == "Human-readable service title."
@@ -84,7 +84,7 @@ def test_resolve_builds_real_model_with_all_types_and_metadata(tmp_path: Path) -
         "renderer": {"upper": False, "label": "compact"},
     }
     assert isinstance(value.renderer, BaseModel)
-    assert value.renderer.__class__.__name__ == "RendererConfig"
+    assert value.renderer.__class__.__name__ == "RendererState"
 
 
 def test_owner_validates_values_and_receives_pydantic_errors(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ def test_owner_validates_values_and_receives_pydantic_errors(tmp_path: Path) -> 
 def test_invalid_default_is_checked_when_owner_instantiates_model(tmp_path: Path) -> None:
     model = _resolve(tmp_path)(
         {
-            "name": "InvalidDefault",
+            "name": "InvalidStateDefault",
             "fields": {"count": {"type": "integer", "default": "invalid"}},
         }
     )
@@ -115,7 +115,7 @@ def test_invalid_default_is_checked_when_owner_instantiates_model(tmp_path: Path
 
 def test_each_resolve_call_returns_an_independent_model_type(tmp_path: Path) -> None:
     resolve = _resolve(tmp_path)
-    spec = {"name": "LocalConfig", "fields": {"value": {"type": "string"}}}
+    spec = {"name": "LocalState", "fields": {"value": {"type": "string"}}}
 
     first = resolve(spec)
     second = resolve(spec)
@@ -130,7 +130,7 @@ def test_internal_normalized_specs_are_inspectable_and_immutable(tmp_path: Path)
     runtime_module = sys.modules[resolve.__self__.__class__.__module__]
     normalized = runtime_module._normalize_model(_complete_spec(), location="model")
 
-    assert normalized.name == "ServiceConfig"
+    assert normalized.name == "ServiceState"
     assert tuple(field.name for field in normalized.fields) == (
         "anything",
         "title",
@@ -141,7 +141,7 @@ def test_internal_normalized_specs_are_inspectable_and_immutable(tmp_path: Path)
         "items",
         "renderer",
     )
-    assert normalized.fields[-1].model.name == "RendererConfig"
+    assert normalized.fields[-1].model.name == "RendererState"
     with pytest.raises(FrozenInstanceError):
         normalized.name = "Changed"
 

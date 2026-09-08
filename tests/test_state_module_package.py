@@ -9,15 +9,15 @@ from pathlib import Path
 from dix.modules import first_party_module_path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-VERIFY = REPOSITORY / "examples" / "verify_config_wheel.py"
+VERIFY = REPOSITORY / "examples" / "verify_state_wheel.py"
 
 
-def test_config_module_is_explicitly_resolvable_from_source() -> None:
-    source = first_party_module_path("dix/config")
-    assert source == (REPOSITORY / "modules" / "dix" / "config").resolve()
+def test_state_module_is_explicitly_resolvable_from_source() -> None:
+    source = first_party_module_path("dix/state")
+    assert source == (REPOSITORY / "modules" / "dix" / "state").resolve()
 
 
-def test_wheel_contains_optional_first_party_config_module(tmp_path: Path) -> None:
+def test_wheel_contains_optional_first_party_state_module(tmp_path: Path) -> None:
     output = tmp_path / "wheel"
     subprocess.run(
         ["uv", "build", "--wheel", "--no-sources", "--out-dir", str(output)],
@@ -33,18 +33,19 @@ def test_wheel_contains_optional_first_party_config_module(tmp_path: Path) -> No
         metadata = BytesParser().parsebytes(archive.read(metadata_name))
 
     assert {
-        "dix/_modules/dix/config/README.md",
-        "dix/_modules/dix/config/compositions/pydantic/composition.toml",
-        "dix/_modules/dix/config/compositions/pydantic/runtime.py",
+        "dix/_modules/dix/state/README.md",
+        "dix/_modules/dix/state/compositions/models/composition.toml",
+        "dix/_modules/dix/state/compositions/models/runtime.py",
     } <= names
-    assert "config" in metadata.get_all("Provides-Extra", [])
+    assert "state" in metadata.get_all("Provides-Extra", [])
+    assert "config" not in metadata.get_all("Provides-Extra", [])
     requirements = [
         item
         for item in metadata.get_all("Requires-Dist", [])
         if item.startswith("pydantic")
     ]
     assert len(requirements) == 1
-    assert "extra == 'config'" in requirements[0]
+    assert "extra == 'state'" in requirements[0]
 
 
 def test_pydantic_is_not_a_base_runtime_dependency() -> None:
@@ -72,7 +73,7 @@ def test_pydantic_is_not_a_base_runtime_dependency() -> None:
     ).returncode == 0
 
 
-def test_wheel_installed_config_module_resolves_a_model(tmp_path: Path) -> None:
+def test_wheel_installed_state_module_resolves_a_model(tmp_path: Path) -> None:
     completed = subprocess.run(
         [sys.executable, str(VERIFY), str(tmp_path)],
         cwd=REPOSITORY,
@@ -82,4 +83,4 @@ def test_wheel_installed_config_module_resolves_a_model(tmp_path: Path) -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "base-without-pydantic=ok" in completed.stdout
-    assert "wheel-config-module=ok" in completed.stdout
+    assert "wheel-state-module=ok" in completed.stdout

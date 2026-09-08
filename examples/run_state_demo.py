@@ -15,20 +15,20 @@ def main() -> int:
     modules = registry.require("module", ModuleComponent)
     applications = registry.require("application", ApplicationComponent)
     sources = (
-        ("dix/config", first_party_module_path("dix/config")),
-        ("acme/config_demo", REPOSITORY / "examples" / "modules" / "acme" / "config_demo"),
+        ("dix/state", first_party_module_path("dix/state")),
+        ("acme/state_demo", REPOSITORY / "examples" / "modules" / "acme" / "state_demo"),
     )
     for module_id, source in sources:
         modules.load_module(source, module_id=module_id)
     instance = applications.create_instance(
-        ApplicationInstanceSpec("demo", "acme/config_demo/config", {}, REPOSITORY),
-        owner_scope_id="config-pressure",
+        ApplicationInstanceSpec("demo", "acme/state_demo/state", {}, REPOSITORY),
+        owner_scope_id="state-pressure",
     )
     try:
         result = instance.api.require("pressure")()
         print(json.dumps(result, indent=2, sort_keys=True))
     finally:
-        applications.destroy_instance("config-pressure", "demo")
+        applications.destroy_instance("state-pressure", "demo")
         for module_id, _ in reversed(sources):
             modules.unload_module(module_id)
     return 0

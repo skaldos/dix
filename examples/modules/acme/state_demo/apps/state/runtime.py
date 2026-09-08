@@ -8,12 +8,12 @@ from pydantic import BaseModel, ValidationError
 from dix.core.application import ApplicationRuntimeContext
 
 
-class ConfigModelApi(Protocol):
+class StateModelApi(Protocol):
     def require(self, function_id: str) -> Callable[..., object]: ...
 
 
-CONFIG_MODEL_SPEC: dict[str, object] = {
-    "name": "DemoConfig",
+STATE_MODEL_SPEC: dict[str, object] = {
+    "name": "DemoState",
     "fields": {
         "service": {
             "type": "string",
@@ -23,7 +23,7 @@ CONFIG_MODEL_SPEC: dict[str, object] = {
         "enabled": {"type": "boolean", "default": True},
         "renderer": {
             "type": "model",
-            "name": "RendererConfig",
+            "name": "RendererState",
             "fields": {
                 "theme": {"type": "string"},
                 "upper": {"type": "boolean", "default": False},
@@ -34,29 +34,29 @@ CONFIG_MODEL_SPEC: dict[str, object] = {
 
 
 class Runtime:
-    """Application-owned use of one local declarative configuration model."""
+    """Application-owned use of one local declarative state model."""
 
     def __init__(
         self,
         *,
         context: ApplicationRuntimeContext,
         config: Mapping[str, object],
-        config_model: ConfigModelApi,
+        state_models: StateModelApi,
     ) -> None:
         self.context = context
         self.config = config
-        resolve = config_model.require("resolve")
-        model = resolve(CONFIG_MODEL_SPEC)
+        resolve = state_models.require("resolve")
+        model = resolve(STATE_MODEL_SPEC)
         if not isinstance(model, type) or not issubclass(model, BaseModel):
-            raise TypeError("config model resolver must return a Pydantic model type")
+            raise TypeError("state model resolver must return a Pydantic model type")
         self.model = model
 
     def validate(self, values: Mapping[str, object]) -> dict[str, object]:
-        """Validate owner-provided values with the application-owned config model."""
+        """Validate owner-provided values with the application-owned state model."""
         return self.model.model_validate(values).model_dump()
 
     def pressure(self) -> dict[str, object]:
-        """Exercise valid and invalid owner-controlled config values."""
+        """Exercise valid and invalid owner-controlled state values."""
         first = self.validate(
             {
                 "service": "alpha",
@@ -85,7 +85,7 @@ class Runtime:
                 "location": list(exc.errors()[0]["loc"]),
             }
         else:
-            raise AssertionError("invalid config values unexpectedly passed validation")
+            raise AssertionError("invalid state values unexpectedly passed validation")
         return {
             "first": first,
             "second": second,

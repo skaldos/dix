@@ -19,21 +19,21 @@ from dix.core.application import ApplicationInstanceSpec
 from dix.modules import first_party_module_path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-EXAMPLE_MODULE = REPOSITORY / "examples" / "modules" / "acme" / "config_demo"
+EXAMPLE_MODULE = REPOSITORY / "examples" / "modules" / "acme" / "state_demo"
 
 
 def _graph(tmp_path: Path):
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     applications = registry.require("application", ApplicationComponent)
-    modules.load_module(first_party_module_path("dix/config"), module_id="dix/config")
-    modules.load_module(EXAMPLE_MODULE, module_id="acme/config_demo")
+    modules.load_module(first_party_module_path("dix/state"), module_id="dix/state")
+    modules.load_module(EXAMPLE_MODULE, module_id="acme/state_demo")
     first = applications.create_instance(
-        ApplicationInstanceSpec("config", "acme/config_demo/config", {}, tmp_path),
+        ApplicationInstanceSpec("state", "acme/state_demo/state", {}, tmp_path),
         owner_scope_id="first",
     )
     second = applications.create_instance(
-        ApplicationInstanceSpec("config", "acme/config_demo/config", {}, tmp_path),
+        ApplicationInstanceSpec("state", "acme/state_demo/state", {}, tmp_path),
         owner_scope_id="second",
     )
     return registry, first, second
@@ -71,18 +71,18 @@ def test_two_application_instances_own_independent_model_types(tmp_path: Path) -
             {"service": "two", "workers": "invalid", "renderer": {"theme": "light"}}
         )
     assert {(item.scope_id, item.id) for item in applications.instances()} == {
-        ("first", "config"),
-        ("second", "config"),
+        ("first", "state"),
+        ("second", "state"),
     }
     assert {(item.scope_id, item.id) for item in compositions.instances()} == {
-        ("application:first:config", "config_model"),
-        ("application:second:config", "config_model"),
+        ("application:first:state", "state_models"),
+        ("application:second:state", "state_models"),
     }
 
 
 def test_visible_pressure_script_runs(tmp_path: Path) -> None:
     completed = subprocess.run(
-        [sys.executable, str(REPOSITORY / "examples" / "run_config_demo.py")],
+        [sys.executable, str(REPOSITORY / "examples" / "run_state_demo.py")],
         cwd=tmp_path,
         env={**os.environ, "PYTHONPATH": str(REPOSITORY / "src")},
         text=True,

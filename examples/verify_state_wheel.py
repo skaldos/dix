@@ -47,23 +47,23 @@ def main() -> int:
         return base_probe.returncode
     print("base-without-pydantic=ok")
 
-    config = workspace / "config"
-    subprocess.run([sys.executable, "-m", "venv", str(config)], check=True)
-    config_install = _run(
+    state = workspace / "state"
+    subprocess.run([sys.executable, "-m", "venv", str(state)], check=True)
+    state_install = _run(
         "uv",
         "pip",
         "install",
         "--python",
-        str(config / "bin" / "python"),
-        f"{wheel}[config]",
+        str(state / "bin" / "python"),
+        f"{wheel}[state]",
         cwd=workspace,
     )
-    if config_install.returncode != 0:
-        sys.stderr.write(config_install.stderr)
-        return config_install.returncode
+    if state_install.returncode != 0:
+        sys.stderr.write(state_install.stderr)
+        return state_install.returncode
 
     probe = _run(
-        str(config / "bin" / "python"),
+        str(state / "bin" / "python"),
         "-c",
         (
             "from dix.core import CompositionComponent, ModuleComponent, "
@@ -74,13 +74,13 @@ def main() -> int:
             "r=create_core_component_registry(); "
             "m=r.require('module', ModuleComponent); "
             "c=r.require('composition', CompositionComponent); "
-            "m.load_module(first_party_module_path('dix/config'), module_id='dix/config'); "
-            "i=c.create_instance(CompositionInstanceSpec('config','dix/config/pydantic',{},Path('.')), "
+            "m.load_module(first_party_module_path('dix/state'), module_id='dix/state'); "
+            "i=c.create_instance(CompositionInstanceSpec('models','dix/state/models',{},Path('.')), "
             "owner_scope_id='wheel'); "
-            "model=i.api.require('resolve')({'name':'WheelConfig','fields':"
+            "model=i.api.require('resolve')({'name':'WheelState','fields':"
             "{'value':{'type':'string'}}}); "
             "assert model.model_validate({'value':'ok'}).value == 'ok'; "
-            "print('wheel-config-module=ok')"
+            "print('wheel-state-module=ok')"
         ),
         cwd=workspace,
     )

@@ -1,0 +1,11 @@
+[app]
+id = "state"
+
+[compositions.state_models]
+use = "dix/state/models"
+
+[functions.validate]
+description = "Validate owner-provided values with the application-owned state model."
+
+[functions.pressure]
+description = "Exercise valid and invalid owner-controlled state values."

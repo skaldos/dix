@@ -1,0 +1,5 @@
+[composition]
+id = "models"
+
+[functions.resolve]
+description = "Resolve a declarative state model specification into a Pydantic model type."

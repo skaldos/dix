@@ -48,21 +48,21 @@ cli = [
     { name = "click" },
     { name = "typer" },
 ]
-config = [
-    { name = "pydantic" },
-]
 dev = [
     { name = "pytest" },
+]
+state = [
+    { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "click", marker = "extra == 'cli'", specifier = ">=8.1,<9" },
-    { name = "pydantic", marker = "extra == 'config'", specifier = ">=2,<3" },
+    { name = "pydantic", marker = "extra == 'state'", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.27,<0.28" },
 ]
-provides-extras = ["cli", "config", "dev"]
+provides-extras = ["cli", "state", "dev"]
 
 [[package]]
 name = "iniconfig"
