@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from dix.modules import first_party_module_path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
+VERIFY = REPOSITORY / "examples" / "verify_config_wheel.py"
 
 
 def test_config_module_is_explicitly_resolvable_from_source() -> None:
@@ -52,6 +54,8 @@ def test_pydantic_is_not_a_base_runtime_dependency() -> None:
             "run",
             "--isolated",
             "--no-project",
+            "--python",
+            sys.executable,
             "--with",
             ".",
             "python",
@@ -66,3 +70,16 @@ def test_pydantic_is_not_a_base_runtime_dependency() -> None:
         cwd=REPOSITORY,
         check=False,
     ).returncode == 0
+
+
+def test_wheel_installed_config_module_resolves_a_model(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(VERIFY), str(tmp_path)],
+        cwd=REPOSITORY,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "base-without-pydantic=ok" in completed.stdout
+    assert "wheel-config-module=ok" in completed.stdout
