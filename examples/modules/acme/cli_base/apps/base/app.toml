@@ -1,0 +1,8 @@
+[app]
+id = "base"
+
+[functions.render]
+description = "Render one value repeatedly."
+
+[functions.status]
+description = "Return the base application status."

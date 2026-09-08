@@ -8,10 +8,37 @@ from pathlib import Path
 
 import pytest
 
-from dix.bootstrap import LauncherBuildError, build_launcher
+from dix.bootstrap import (
+    LauncherBuildError,
+    LauncherDefinition,
+    LauncherModule,
+    build_launcher,
+    render_launcher,
+)
 from dix.core import ApplicationComponent, ModuleComponent
 
 FIXTURE = Path(__file__).parent / "fixtures" / "bootstrap_seed"
+
+
+def test_rendered_launcher_with_multiple_modules_is_valid_python(tmp_path: Path) -> None:
+    definition = LauncherDefinition(
+        name="multi",
+        adapter="python_cli",
+        application="acme/multi/main",
+        function="main",
+        modules=(
+            LauncherModule("acme/first", tmp_path / "first"),
+            LauncherModule("acme/second", tmp_path / "second"),
+        ),
+        spec_path=tmp_path / "launcher.toml",
+    )
+
+    source = render_launcher(definition)
+
+    compile(source, "generated-multi-launcher.py", "exec")
+    assert "('acme/first'" in source
+    assert "('acme/second'" in source
+    assert "),," not in source
 
 
 def test_build_is_deterministic_and_requires_explicit_replace(tmp_path: Path) -> None:

@@ -1,0 +1,11 @@
+[app]
+id = "test"
+
+[functions.hello]
+description = "Greet one named recipient."
+
+[functions.hello_world]
+description = "Return an asynchronous world greeting."
+
+[functions.status]
+description = "Return the test application status."

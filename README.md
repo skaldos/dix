@@ -35,6 +35,9 @@ side effects and is not a security sandbox.
 ```text
 src/dix/core/            current core implementation
 src/dix/bootstrap/       minimal build-time launcher seed
+modules/dix/             stable first-party DIX modules
+examples/modules/        explicit example application modules
+examples/launchers/      launcher specifications and how-to material
 tests/                   stable core regression
 tests/fixtures/modules/  synthetic test modules; never packaged
 unstable/modules/        preserved module experiments
@@ -43,6 +46,9 @@ unstable/tests/          historical evidence for replaced surfaces
 ```
 
 Stable source must never import from `unstable`. The unstable tree is excluded from wheels.
+
+Stable first-party modules are bundled as package data but remain explicitly resolved and loaded.
+They do not become core providers or start automatically.
 
 ## Module layout
 
@@ -106,16 +112,38 @@ calls its function, and tears the graph down. Its `python_cli` adapter locally e
 uv run python -m dix.bootstrap build launcher.toml --output ./launcher.py
 ```
 
+## Optional multi-application CLI
+
+The first-party `dix/cli` module projects explicitly supplied application APIs into one Typer
+command tree. Typer and Click remain optional dependencies:
+
+```bash
+uv sync --extra cli
+```
+
+Resolve the module without discovery or loading:
+
+```python
+from dix.modules import first_party_module_path
+
+cli_module = first_party_module_path("dix/cli")
+```
+
+The complete manually composed example is documented in
+[`examples/launchers/README.md`](examples/launchers/README.md). It combines two independent target
+applications under the exact groups `base` and `test`, then builds the result through the unchanged
+launcher boundary `main(argv) -> int`.
+
 ## Development verification
 
 ```bash
-uv run pytest -q
-uv run python -m compileall -q src tests
+uv run --extra cli pytest -q
+uv run --extra cli python -m compileall -q src modules tests examples
 zsh unstable/pressure/bootstrap_seed/run.zsh
 zsh unstable/pressure/bootstrap_seed/verify_wheel.zsh
 git diff --check
 ```
 
-CLI, Typer, HTTP, generic runners, Norn/strand experiments, code generation, remote execution, ROBA,
-sandboxing, package management, and lifecycle policy remain higher-layer work rather than hidden
-core behavior.
+The Typer adapter is one higher-layer module, not core behavior. HTTP, generic runners, Norn/strand
+experiments, code generation, remote execution, ROBA, sandboxing, package management, and lifecycle
+policy likewise remain higher-layer work.

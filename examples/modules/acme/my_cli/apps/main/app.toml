@@ -1,0 +1,14 @@
+[app]
+id = "main"
+
+[compositions.cli]
+use = "dix/cli/typer"
+
+[apps.base]
+use = "acme/cli_base/base"
+
+[apps.test]
+use = "acme/cli_test/test"
+
+[functions.main]
+description = "Run the explicitly composed multi-application CLI."

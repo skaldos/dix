@@ -101,6 +101,7 @@ class Runtime:
     assert invoke(name="my_cli", targets={"test_group": target}, argv=["--help"]) == 0
     root_help = capsys.readouterr()
     assert "test_group" in root_help.out
+    assert "echo_value" not in root_help.out
     assert "private_helper" not in root_help.out
     assert target.require("echo_value").__self__.calls == []
 
@@ -274,6 +275,31 @@ class Runtime:
     ) == 2
     assert "invalid" in capsys.readouterr().err.lower()
     assert target.require("number").__self__.calls == 0
+
+
+def test_environment_name_collision_is_rejected_before_target_call(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    invoke, target = _runtime(
+        tmp_path,
+        spec='[app]\nid = "target"\n[functions.read_value]\n',
+        runtime="""\
+class Runtime:
+    calls = 0
+    def __init__(self, *, context, config): pass
+    def read_value(self, *, item: str) -> str:
+        self.calls += 1
+        return item
+""",
+    )
+    assert invoke(
+        name="my_cli",
+        targets={"same-name": target, "same_name": target},
+        argv=["--help"],
+    ) == 2
+    assert "environment name collision" in capsys.readouterr().err
+    assert target.require("read_value").__self__.calls == 0
 
 
 def test_annotation_not_supported_by_typer_fails_before_target_call(

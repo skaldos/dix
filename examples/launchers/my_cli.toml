@@ -1,0 +1,21 @@
+[launcher]
+name = "my_cli"
+adapter = "python_cli"
+application = "acme/my_cli/main"
+function = "main"
+
+[[modules]]
+id = "dix/cli"
+source = "../../modules/dix/cli"
+
+[[modules]]
+id = "acme/cli_base"
+source = "../modules/acme/cli_base"
+
+[[modules]]
+id = "acme/cli_test"
+source = "../modules/acme/cli_test"
+
+[[modules]]
+id = "acme/my_cli"
+source = "../modules/acme/my_cli"
