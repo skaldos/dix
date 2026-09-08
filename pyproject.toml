@@ -13,9 +13,18 @@ authors = [{ name = "dix contributors" }]
 dependencies = []
 
 [project.optional-dependencies]
+cli = [
+  "typer>=0.27,<0.28",
+]
 dev = [
   "pytest>=8.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dix"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"modules" = "dix/_modules"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
