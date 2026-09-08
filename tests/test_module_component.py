@@ -12,6 +12,7 @@ from dix.core import (
 )
 from dix.core.application import ApplicationInstanceSpec
 from dix.core.composition import CompositionInstanceSpec
+from dix.core.module import ModuleSpecError
 from dix.core.module.component import ModuleComponentError
 
 COMPOSITION_RUNTIME = """\
@@ -72,6 +73,23 @@ def test_module_component_is_runtime_scoped_and_is_the_only_module_registry() ->
     assert first is second
     assert not hasattr(compositions, "load_module")
     assert not hasattr(compositions, "modules")
+
+
+@pytest.mark.parametrize("family", ["models", "contracts"])
+def test_data_artifact_directories_do_not_define_a_core_module(
+    tmp_path: Path,
+    family: str,
+) -> None:
+    module = tmp_path / "data-only"
+    artifact = module / family / "item"
+    artifact.mkdir(parents=True)
+    (artifact / ("model.toml" if family == "models" else "contract.toml")).write_text(
+        "[artifact]\nid = 'ignored'\n"
+    )
+    modules, _, _ = runtime_components()
+
+    with pytest.raises(ModuleSpecError, match="module contains no definitions"):
+        modules.load_module(module, module_id="acme/data_only")
 
 
 def test_mixed_module_is_published_as_one_registry_unit(tmp_path: Path) -> None:

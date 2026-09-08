@@ -10,7 +10,6 @@ import pytest
 
 from dix.bootstrap import LauncherBuildError, build_launcher
 from dix.core import ApplicationComponent, ModuleComponent
-from dix.core.function import FunctionExecutionError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "bootstrap_seed"
 
@@ -88,7 +87,7 @@ def test_generated_launcher_cleans_up_after_application_error(
     monkeypatch.setattr(ApplicationComponent, "destroy_instance", destroy)
     monkeypatch.setattr(ModuleComponent, "unload_module", unload)
 
-    with pytest.raises(FunctionExecutionError):
+    with pytest.raises(RuntimeError, match="requested failure"):
         generated._run(["fail"])
 
     assert events == ["destroy", "unload:acme/bootstrap_seed"]

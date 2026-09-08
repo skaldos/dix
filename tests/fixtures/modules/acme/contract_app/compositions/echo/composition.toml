@@ -1,9 +1,0 @@
-[composition]
-id = "echo"
-
-[functions.echo]
-description = "Echo one string."
-
-[functions.echo.contract]
-use = "acme/contract_app/echo"
-version = "1"

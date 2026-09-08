@@ -1,9 +1,0 @@
-[contract]
-id = "entry"
-version = "1"
-
-[input]
-type = "array"
-
-[output]
-type = "integer"

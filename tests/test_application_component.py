@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
-from dix.core.application import ApplicationComponentError
+from dix.core.application import ApplicationComponentError, ApplicationInstanceSpec
 from dix.core.module.component import ModuleComponentError
 
 
@@ -61,3 +61,60 @@ def test_unknown_application_instance_lookup_is_deterministic() -> None:
 
     with pytest.raises(ApplicationComponentError, match="instance not found"):
         applications.require_instance("owner", "missing")
+
+
+def test_application_function_keeps_real_signature_and_raw_values(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "module"
+    root = write_application(
+        module,
+        """\
+class Runtime:
+    def __init__(self, *, context, config):
+        self.marker = config["marker"]
+
+    def combine(self, first, second=None, *, metadata=None):
+        return self.marker, first, second, metadata
+""",
+    )
+    (root / "app.toml").write_text(
+        """\
+[app]
+id = "demo"
+
+[functions.combine]
+description = "Expose the local Python function unchanged."
+"""
+    )
+    registry = create_core_component_registry()
+    modules = registry.require("module", ModuleComponent)
+    applications = registry.require("application", ApplicationComponent)
+    modules.load_module(module, module_id="acme/demo")
+
+    descriptor = applications.describe_function("acme/demo/demo", "combine")
+    assert str(descriptor.signature) == "(first, second=None, *, metadata=None)"
+
+    first_instance = applications.create_instance(
+        ApplicationInstanceSpec("first", "acme/demo/demo", {"marker": "A"}, tmp_path),
+        owner_scope_id="owner-a",
+    )
+    second_instance = applications.create_instance(
+        ApplicationInstanceSpec("second", "acme/demo/demo", {"marker": "B"}, tmp_path),
+        owner_scope_id="owner-b",
+    )
+    raw_value = object()
+    metadata = {"unrestricted": raw_value}
+
+    first_result = first_instance.api.require("combine")(
+        raw_value,
+        ["unchanged"],
+        metadata=metadata,
+    )
+    second_result = second_instance.api.require("combine")(raw_value)
+
+    assert first_result[0] == "A"
+    assert first_result[1] is raw_value
+    assert first_result[2] == ["unchanged"]
+    assert first_result[3] is metadata
+    assert second_result == ("B", raw_value, None, None)

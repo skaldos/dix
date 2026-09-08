@@ -3,7 +3,3 @@ id = "main"
 
 [functions.main]
 description = "Print one greeting through a generated DIX launcher."
-
-[functions.main.contract]
-use = "dix/examples/seed_hello/entry"
-version = "1"

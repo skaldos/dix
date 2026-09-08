@@ -14,6 +14,7 @@ def render_launcher(definition: LauncherDefinition) -> str:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import sys
 from pathlib import Path
 
@@ -50,7 +51,9 @@ def _run(arguments: list[str]) -> int:
             owner_scope_id=owner_scope_id,
         )
         application_created = True
-        result = asyncio.run(instance.api.invoke(FUNCTION_ID, arguments))
+        result = instance.api.require(FUNCTION_ID)(arguments)
+        if inspect.isawaitable(result):
+            result = asyncio.run(result)
         if type(result) is not int:
             raise TypeError("python_cli entry function must return an integer")
         return result

@@ -3,7 +3,3 @@ id = "main"
 
 [functions.main]
 description = "Run the bootstrap test entry point."
-
-[functions.main.contract]
-use = "acme/bootstrap_seed/entry"
-version = "1"

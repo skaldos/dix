@@ -136,6 +136,37 @@ def test_load_does_not_execute_undeclared_runtime_methods(tmp_path: Path) -> Non
     assert marker.exists() is False
 
 
+def test_declared_function_keeps_its_real_signature_and_raw_values(tmp_path: Path) -> None:
+    module = tmp_path / "bundle"
+    write_composition(
+        module,
+        "item",
+        body='[composition]\nid = "item"\n[functions.combine]\n',
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            "    def combine(self, first, second=None, *, metadata=None):\n"
+            "        return first, second, metadata\n"
+        ),
+    )
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/bundle")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("item", "acme/bundle/item", {}, tmp_path),
+        owner_scope_id="test",
+    )
+    first = object()
+    second = {"nested": [1, 2]}
+    metadata = ["untouched"]
+
+    function = instance.api.require("combine")
+
+    assert str(instance.api.describe("combine").signature) == (
+        "(first, second=None, *, metadata=None)"
+    )
+    assert function(first, second, metadata=metadata) == (first, second, metadata)
+
+
 @pytest.mark.parametrize("function_id", ["init", "cleanup", "start", "stop"])
 def test_previous_lifecycle_names_are_ordinary_declared_functions(
     tmp_path: Path,

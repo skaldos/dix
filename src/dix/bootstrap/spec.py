@@ -7,7 +7,6 @@ from typing import Any
 
 from dix.core import ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationDefinition, normalize_effective_application_id
-from dix.core.contract import ContractDefinition, ContractReference
 from dix.core.module import ModuleSpecError, normalize_module_id
 
 from .models import LauncherDefinition, LauncherModule
@@ -54,7 +53,6 @@ def load_launcher_spec(path: Path) -> LauncherDefinition:
     modules: list[LauncherModule] = []
     module_ids: set[str] = set()
     applications: dict[str, ApplicationDefinition] = {}
-    contracts: dict[ContractReference, ContractDefinition] = {}
     registry = create_core_component_registry()
     module_component = registry.require("module", ModuleComponent)
     for index, raw_module in enumerate(raw_modules):
@@ -80,7 +78,6 @@ def load_launcher_spec(path: Path) -> LauncherDefinition:
             ) from exc
         module_ids.add(module_id)
         applications.update((item.id, item) for item in inspection.application_definitions)
-        contracts.update((item.reference, item) for item in inspection.contract_definitions)
         modules.append(LauncherModule(id=module_id, source=source))
 
     if application not in applications:
@@ -93,21 +90,6 @@ def load_launcher_spec(path: Path) -> LauncherDefinition:
         raise LauncherSpecError(
             f"launcher function is not declared by application '{application}': {function}"
         )
-    contract_reference = functions[function].contract
-    if contract_reference not in contracts:
-        raise LauncherSpecError(
-            "launcher function contract is not provided by the configured modules: "
-            f"{contract_reference.use}@{contract_reference.version!r}"
-        )
-    contract = contracts[contract_reference]
-    input_type = contract.strand.input_element.type
-    output_type = contract.strand.output_element.type
-    if (input_type, output_type) != ("array", "integer"):
-        raise LauncherSpecError(
-            "python_cli function contract must be array -> integer; "
-            f"got {input_type} -> {output_type}"
-        )
-
     return LauncherDefinition(
         name=name,
         adapter=adapter,

@@ -2,78 +2,58 @@
 
 Declarative Interface eXecutor.
 
-`dix` is currently an architecture-stage Python runtime core. Its stable pressure-tested path is:
+`dix` is currently an architecture-stage Python toolkit for building isolated runtime graphs:
 
 ```text
-code-free contract
--> module-owned contract registry
--> explicit Python function binding
--> composition
--> application
--> contract-checked invocation
+explicit module load
+-> composition graph
+-> application graph
+-> explicitly exposed local functions
+-> direct Python calls
 ```
 
-The repository is intentionally not claiming a production runner, transport, UI, authorization
-model, process sandbox, package manager, or lifecycle convention yet.
+The core does not define a daemon, transport, wire contract, validation policy, user interface, or
+authorization model.
 
 ## Current core
 
-- **Element** defines extensible processors for native Python value types.
-- **Datamodel** combines elements into named structured models.
-- **Norn** registers directional input/output strands and binds them to local handlers.
-- **Contract** is a code-free module artifact backed by one Norn strand definition.
-- **Function binding** connects exactly one declared Python function to exactly one contract.
-- **Composition** combines core components and other compositions in an isolated instance graph.
-- **Application** combines compositions and other applications into a callable local boundary.
-- **Module** inspects, stages, publishes, and unloads contracts, compositions, and applications as
-  one transaction.
+- **Element** processes one native Python value through an explicit technical handler chain.
+- **Datamodel** processes mappings against locally registered field schemas and reports results.
+- **Composition** combines components and other compositions in an isolated instance graph.
+- **Application** combines compositions and applications into a callable local boundary.
+- **Module** explicitly inspects, stages, publishes, and unloads composition/application bundles.
 
-Python loaded from a trusted module executes in-process. Atomic registry publication does not make
-arbitrary Python imports safe and cannot undo import side effects.
+Composition and application specifications are authoritative only for graph assembly and function
+exposure. Real runtime methods remain authoritative for their Python signatures. DIX does not
+implicitly validate, normalize, project, or serialize function arguments and results.
+
+Python loaded from a module executes in-process. Atomic registry publication cannot undo import
+side effects and is not a security sandbox.
 
 ## Repository maturity boundary
 
 ```text
 src/dix/core/            current core implementation
+src/dix/bootstrap/       minimal build-time launcher seed
 tests/                   stable core regression
 tests/fixtures/modules/  synthetic test modules; never packaged
-examples/modules/        future durable teaching examples
 unstable/modules/        preserved module experiments
 unstable/tools/          pressure and authoring experiments
-unstable/tests/          historical regression evidence for replaced surfaces
+unstable/tests/          historical evidence for replaced surfaces
 ```
 
-`src/dix` and future stable modules must never import from `unstable`. The `unstable` tree is used
-only through explicit development paths and is excluded from wheels.
+Stable source must never import from `unstable`. The unstable tree is excluded from wheels.
 
 ## Module layout
 
 ```text
-<trusted-root>/<module-id>/
-  contracts/<local-id>/contract.toml
+<module>/
   compositions/<local-id>/{composition.toml,runtime.py}
   apps/<local-id>/{app.toml,runtime.py}
 ```
 
-A module may contain any non-empty combination of these artifact families. No `module.toml` is
-required.
-
-### Contract
-
-```toml
-[contract]
-id = "echo"
-version = "1"
-
-[input]
-type = "string"
-
-[output]
-type = "string"
-```
-
-Contracts are authoritative. Runtime code never generates, mutates, or completes them. A missing
-version means exactly `version = None`; it does not mean `latest`.
+A module contains at least one composition or application. There is no `module.toml`, automatic
+startup, trusted-root policy, model registry, or contract registry in the core.
 
 ### Composition function
 
@@ -82,11 +62,7 @@ version means exactly `version = None`; it does not mean `latest`.
 id = "echo"
 
 [functions.echo]
-description = "Echo one string."
-
-[functions.echo.contract]
-use = "acme/contract_app/echo"
-version = "1"
+description = "Echo one local value."
 ```
 
 ```python
@@ -99,52 +75,47 @@ class Runtime:
         return value
 ```
 
-The first binding slice accepts exactly one non-variadic function parameter. Internal runtime
-methods not declared under `[functions]` remain private implementation details and need no contract.
+Only methods declared under `[functions]` are exposed. The function receives and returns native
+Python values without automatic contract processing.
 
-### Application re-export
-
-Dependencies do not implicitly export functions. The application declares its local wrapper,
-origin, and contract explicitly:
+### Explicit application wrapper
 
 ```toml
 [app]
 id = "echo"
 
 [compositions.worker]
-use = "acme/contract_app/echo"
+use = "acme/example/echo"
 
 [functions.echo]
+description = "Expose the worker locally."
 export = "worker.echo"
+```
 
-[functions.echo.contract]
-use = "acme/contract_app/echo"
-version = "1"
+Dependency functions are never exported implicitly. The application implements an explicit local
+wrapper, so it owns adaptation and policy.
+
+## Seed launcher
+
+`python -m dix.bootstrap build` renders a normal Python program for one fixed application function.
+The generated launcher creates its own registry, loads only declared modules, creates one app,
+calls its function, and tears the graph down. Its `python_cli` adapter locally expects a
+`list[str] -> int` entry point; this is not a core-wide contract.
+
+```bash
+uv run python -m dix.bootstrap build launcher.toml --output ./launcher.py
 ```
 
 ## Development verification
 
 ```bash
-uv run --extra dev pytest
-uv run python -m compileall -q src tests unstable examples
-uv run python unstable/tools/pressure/run_contract_application.py
-uv build --wheel
-unzip -l dist/*.whl
+uv run pytest -q
+uv run python -m compileall -q src tests
+zsh unstable/pressure/bootstrap_seed/run.zsh
+zsh unstable/pressure/bootstrap_seed/verify_wheel.zsh
+git diff --check
 ```
 
-The pressure script proves contract inspection, atomic module loading, composition/application
-binding, checked invocation, invalid-input rejection, live-instance unload blocking, teardown, and
-final unload without a CLI, HTTP service, or generic runner.
-
-## Explicit non-goals of this slice
-
-- generic application execution or daemon hosting;
-- CLI/Typer projection;
-- HTTP, RPC, IPC, renderer, or ROBA integration;
-- sandbox and authorization policy;
-- contract/code generation or AST inspection;
-- automatic version resolution;
-- multiple or optional function parameters;
-- datamodel-shaped function input.
-
-Those are higher layers over the proven boundary, not hidden behavior in the current core.
+CLI, Typer, HTTP, generic runners, Norn/strand experiments, code generation, remote execution, ROBA,
+sandboxing, package management, and lifecycle policy remain higher-layer work rather than hidden
+core behavior.
