@@ -128,7 +128,6 @@ def create_core_component_registry() -> ComponentRegistry:
     from .datamodel import DatamodelComponent
     from .element import ElementComponent
     from .module.component import ModuleComponent
-    from .norn import NornComponent
 
     registry = ComponentRegistry()
     registry.register_provider(
@@ -149,15 +148,6 @@ def create_core_component_registry() -> ComponentRegistry:
     )
     registry.register_provider(
         ComponentProvider(
-            id="norn",
-            lifetime="composition",
-            create=lambda scope: NornComponent(
-                datamodel=scope.require("datamodel", DatamodelComponent)
-            ),
-        )
-    )
-    registry.register_provider(
-        ComponentProvider(
             id="composition",
             lifetime="runtime",
             create=lambda scope: CompositionComponent(components=registry),
@@ -168,8 +158,7 @@ def create_core_component_registry() -> ComponentRegistry:
             id="application",
             lifetime="runtime",
             create=lambda scope: ApplicationComponent(
-                compositions=scope.require("composition", CompositionComponent),
-                components=registry,
+                compositions=scope.require("composition", CompositionComponent)
             ),
         )
     )
