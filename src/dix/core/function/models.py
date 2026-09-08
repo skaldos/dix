@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from dix.core.contract import ContractDefinition
+from dix.core.norn import StrandDefinition
 
 FunctionSource = Literal["local", "local_wrapper"]
 FunctionCallStyle = Literal["positional", "keyword"]
@@ -31,5 +32,14 @@ class FunctionBinding:
     function_id: str
     owner_id: str
     contract: ContractDefinition
+    strand: StrandDefinition
     parameter_name: str
     call_style: FunctionCallStyle
+
+
+@dataclass(frozen=True)
+class FunctionRuntimeBinding:
+    """Instance-local Norn binding for one structurally bound function."""
+
+    function: FunctionBinding
+    handler_id: str

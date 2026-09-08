@@ -171,19 +171,14 @@ class NornComponent:
     def __init__(self, datamodel: DatamodelComponent) -> None:
         self.datamodel = datamodel
         self.element = datamodel.element
-        self._element_scope = self.element.create_extension_scope(
-            (
-                ElementBinding(
-                    type_name=MODEL_ELEMENT_TYPE,
-                    handler_id=_ModelElementHandler.handler_id,
-                    handler=_ModelElementHandler(datamodel),
-                    mode="define",
-                ),
-            ),
-            parent=datamodel.default_element_scope,
+        self._model_binding = ElementBinding(
+            type_name=MODEL_ELEMENT_TYPE,
+            handler_id=_ModelElementHandler.handler_id,
+            handler=_ModelElementHandler(datamodel),
+            mode="define",
         )
         self._registered: dict[str, RegisteredStrand] = {}
-        self._bindings: dict[str, StrandBinding] = {}
+        self._bindings: dict[tuple[str, str], StrandBinding] = {}
 
     def register(self, definition: StrandDefinition) -> RegisteredStrand:
         if not isinstance(definition, StrandDefinition):
@@ -191,8 +186,12 @@ class NornComponent:
         if definition.id in self._registered:
             raise StrandRegistrationError(f"strand is already registered: {definition.id}")
 
-        input_processor = self.element.bind(definition.input_element, self._element_scope)
-        output_processor = self.element.bind(definition.output_element, self._element_scope)
+        element_scope = self.element.create_extension_scope(
+            (self._model_binding,),
+            parent=self.datamodel.default_element_scope,
+        )
+        input_processor = self.element.bind(definition.input_element, element_scope)
+        output_processor = self.element.bind(definition.output_element, element_scope)
         registered = RegisteredStrand(
             definition=definition,
             input_processor=input_processor,
@@ -200,6 +199,17 @@ class NornComponent:
         )
         self._registered[definition.id] = registered
         return registered
+
+    def ensure_registered(self, definition: StrandDefinition) -> RegisteredStrand:
+        """Return an identical registration or create it without masking conflicts."""
+        existing = self._registered.get(definition.id)
+        if existing is None:
+            return self.register(definition)
+        if existing.definition != definition:
+            raise StrandRegistrationError(
+                f"strand is already registered with a different definition: {definition.id}"
+            )
+        return existing
 
     def bind(
         self,
@@ -210,36 +220,58 @@ class NornComponent:
     ) -> StrandBinding:
         normalized_id = _strand_id(strand_id)
         self._require_registered(normalized_id)
-        if normalized_id in self._bindings:
-            raise StrandRegistrationError(f"strand is already bound: {normalized_id}")
+        key = (normalized_id, handler_id)
+        if key in self._bindings:
+            raise StrandRegistrationError(
+                f"strand handler is already bound: {normalized_id}/{handler_id}"
+            )
         binding = StrandBinding(
             strand_id=normalized_id,
             handler_id=handler_id,
             handler=handler,
         )
-        self._bindings[normalized_id] = binding
+        self._bindings[key] = binding
         return binding
 
     def describe(self, strand_id: str) -> StrandDescriptor:
         registered = self._require_registered(_strand_id(strand_id))
-        binding = self._bindings.get(registered.definition.id)
+        bindings = self._strand_bindings(registered.definition.id)
+        binding = bindings[0] if len(bindings) == 1 else None
         return StrandDescriptor(
             id=registered.definition.id,
             input_element=registered.definition.input_element,
             output_element=registered.definition.output_element,
-            bound=binding is not None,
+            bound=bool(bindings),
             handler_id=None if binding is None else binding.handler_id,
         )
 
     def strands(self) -> tuple[StrandDescriptor, ...]:
         return tuple(self.describe(strand_id) for strand_id in sorted(self._registered))
 
-    async def call(self, strand_id: str, value: Any) -> Any:
+    async def call(
+        self,
+        strand_id: str,
+        value: Any,
+        *,
+        handler_id: str | None = None,
+    ) -> Any:
         normalized_id = _strand_id(strand_id)
         registered = self._require_registered(normalized_id)
-        binding = self._bindings.get(normalized_id)
-        if binding is None:
-            raise StrandNotBound(f"strand is not bound: {normalized_id}")
+        bindings = self._strand_bindings(normalized_id)
+        if handler_id is None:
+            if not bindings:
+                raise StrandNotBound(f"strand is not bound: {normalized_id}")
+            if len(bindings) != 1:
+                raise StrandNotBound(
+                    f"strand has multiple bindings; handler_id is required: {normalized_id}"
+                )
+            binding = bindings[0]
+        else:
+            binding = self._bindings.get((normalized_id, handler_id))
+            if binding is None:
+                raise StrandNotBound(
+                    f"strand handler is not bound: {normalized_id}/{handler_id}"
+                )
 
         input_result = registered.input_processor.decode(value)
         if not input_result.compatible:
@@ -264,6 +296,13 @@ class NornComponent:
                 issues=output_result.issues,
             )
         return output_result.value
+
+    def _strand_bindings(self, strand_id: str) -> tuple[StrandBinding, ...]:
+        return tuple(
+            binding
+            for (candidate_id, _), binding in sorted(self._bindings.items())
+            if candidate_id == strand_id
+        )
 
     def _require_registered(self, strand_id: str) -> RegisteredStrand:
         try:

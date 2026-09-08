@@ -5,9 +5,20 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from dix.core.contract import ContractDefinition, ContractReference
-from dix.core.element import ElementComponent
-from dix.core.function import FunctionDescriptor, bind_function, invoke_function
+from dix.core.contract import (
+    ContractDefinition,
+    ContractReference,
+    resolve_contract_strand,
+)
+from dix.core.function import (
+    FunctionDescriptor,
+    FunctionRuntimeBinding,
+    bind_function,
+    bind_function_runtime,
+    invoke_function,
+)
+from dix.core.model import ModelArtifactDefinition, ModelReference
+from dix.core.norn import NornComponent
 
 from .models import (
     ApplicationDefinition,
@@ -29,11 +40,13 @@ class ApplicationApi:
         self,
         functions: Mapping[str, Callable[..., object]],
         descriptors: Mapping[str, ApplicationFunctionDescriptor],
-        elements: ElementComponent,
+        runtime_bindings: Mapping[str, FunctionRuntimeBinding],
+        norn: NornComponent,
     ) -> None:
         self._functions = MappingProxyType(dict(functions))
         self._descriptors = MappingProxyType(dict(descriptors))
-        self._elements = elements
+        self._runtime_bindings = MappingProxyType(dict(runtime_bindings))
+        self._norn = norn
 
     def require(self, function_id: str) -> Callable[..., object]:
         try:
@@ -55,12 +68,11 @@ class ApplicationApi:
         return tuple(self._descriptors[item] for item in sorted(self._descriptors))
 
     async def invoke(self, function_id: str, value: object) -> object:
-        descriptor = self.describe(function_id)
+        self.describe(function_id)
         return await invoke_function(
-            descriptor.binding,
-            self.require(function_id),
+            self._runtime_bindings[function_id],
             value,
-            elements=self._elements,
+            norn=self._norn,
         )
 
     def __getattr__(self, function_id: str) -> Callable[..., object]:
@@ -101,6 +113,7 @@ def describe_runtime_functions(
     definition: ApplicationDefinition,
     runtime_type: type[object],
     contracts: Mapping[ContractReference, ContractDefinition],
+    models: Mapping[ModelReference, ModelArtifactDefinition],
 ) -> tuple[ApplicationFunctionDescriptor, ...]:
     """Describe only functions declared by the application spec."""
     origins = function_origins(definition)
@@ -147,7 +160,11 @@ def describe_runtime_functions(
         descriptors.append(
             ApplicationFunctionDescriptor(
                 **descriptor.__dict__,
-                binding=bind_function(descriptor, contract),
+                binding=bind_function(
+                    descriptor,
+                    contract,
+                    strand=resolve_contract_strand(contract, models),
+                ),
             )
         )
     return tuple(descriptors)
@@ -159,10 +176,11 @@ def create_api(
     composition_dependencies: Mapping[str, CompositionApi],
     application_dependencies: Mapping[str, ApplicationApi],
     descriptors: tuple[ApplicationFunctionDescriptor, ...],
-    elements: ElementComponent,
+    norn: NornComponent,
 ) -> ApplicationApi:
     dependencies = {**composition_dependencies, **application_dependencies}
     functions: dict[str, Callable[..., object]] = {}
+    runtime_bindings: dict[str, FunctionRuntimeBinding] = {}
     for descriptor in descriptors:
         if descriptor.origin is not None:
             alias, dependency_function = descriptor.origin.split(".", 1)
@@ -179,8 +197,14 @@ def create_api(
                 f"application function is not callable: {definition.id}.{descriptor.id}"
             )
         functions[descriptor.id] = bound
+        runtime_bindings[descriptor.id] = bind_function_runtime(
+            descriptor.binding,
+            bound,
+            norn=norn,
+        )
     return ApplicationApi(
         functions=functions,
         descriptors={item.id: item for item in descriptors},
-        elements=elements,
+        runtime_bindings=runtime_bindings,
+        norn=norn,
     )

@@ -8,6 +8,7 @@ from .contract import (
     ContractReference,
     ContractSpecError,
     inspect_contract_spec,
+    resolve_contract_strand,
 )
 from .datamodel import (
     DatamodelComponent,
@@ -41,7 +42,9 @@ from .function import (
     FunctionInputError,
     FunctionInvocationError,
     FunctionOutputError,
+    FunctionRuntimeBinding,
     bind_function,
+    bind_function_runtime,
     invoke_function,
 )
 from .module.component import ModuleComponent, ModuleComponentError
@@ -115,6 +118,7 @@ __all__ = [
     "FunctionInputError",
     "FunctionInvocationError",
     "FunctionOutputError",
+    "FunctionRuntimeBinding",
     "ModelDefinition",
     "ModelArtifactDefinition",
     "ModelIssue",
@@ -143,10 +147,12 @@ __all__ = [
     "StrandValueError",
     "UnknownElementType",
     "bind_function",
+    "bind_function_runtime",
     "create_core_component_registry",
     "inspect_contract_spec",
     "inspect_model_spec",
     "invoke_function",
     "model_definition",
     "model_element",
+    "resolve_contract_strand",
 ]

@@ -87,6 +87,19 @@ def test_model_artifact_participates_in_module_digest(tmp_path: Path) -> None:
     assert before != after
 
 
+def test_duplicate_model_module_is_rejected_without_partial_publication(
+    tmp_path: Path,
+) -> None:
+    modules, _ = components()
+    modules.load_module(model_module(tmp_path / "first"), module_id="acme/models")
+
+    with pytest.raises(ModuleComponentError, match="module already loaded"):
+        modules.load_module(model_module(tmp_path / "second"), module_id="acme/models")
+
+    assert len(modules.models()) == 1
+    assert len(modules.modules()) == 1
+
+
 def test_later_definition_failure_does_not_publish_staged_model(tmp_path: Path) -> None:
     modules, compositions = components()
     root = model_module(tmp_path / "module")

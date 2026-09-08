@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dix.core.element import CORE_ELEMENT_TYPES, ElementSpec
 from dix.core.model import ModelReference
+from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import canonical_file, normalize_local_id, normalize_module_id
 from dix.core.norn import StrandDefinition
 

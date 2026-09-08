@@ -140,7 +140,24 @@ def test_registration_and_binding_fail_without_partial_publication() -> None:
 
     norn.bind("test/text", handler_id="test.identity", handler=lambda value: value)
     with pytest.raises(StrandRegistrationError, match="already bound"):
-        norn.bind("test/text", handler_id="test.other", handler=lambda value: value)
+        norn.bind("test/text", handler_id="test.identity", handler=lambda value: value)
+
+
+def test_multiple_handlers_for_one_strand_are_explicitly_addressable() -> None:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    norn.register(strand())
+    norn.bind("test/text", handler_id="test.first", handler=lambda value: f"first:{value}")
+    norn.bind("test/text", handler_id="test.second", handler=lambda value: f"second:{value}")
+
+    assert norn.describe("test/text").handler_id is None
+    with pytest.raises(StrandNotBound, match="multiple bindings"):
+        asyncio.run(norn.call("test/text", "value"))
+    assert asyncio.run(
+        norn.call("test/text", "value", handler_id="test.first")
+    ) == "first:value"
+    assert asyncio.run(
+        norn.call("test/text", "value", handler_id="test.second")
+    ) == "second:value"
 
 
 def test_unknown_unbound_input_and_output_fail_at_distinct_boundaries() -> None:

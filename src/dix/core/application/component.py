@@ -14,8 +14,9 @@ from dix.core.composition import (
 )
 from dix.core.composition.models import CompositionInstance, LoadedCompositionDefinition
 from dix.core.contract import ContractDefinition, ContractReference
-from dix.core.element import ElementComponent
+from dix.core.model import ModelArtifactDefinition, ModelReference
 from dix.core.module.models import ModuleDescriptor
+from dix.core.norn import NornComponent
 from dix.core.registry import ComponentRegistry
 
 from .models import (
@@ -227,7 +228,7 @@ class ApplicationComponent:
                     composition_apis,
                     child_apis,
                     loaded.functions,
-                    component_scope.require("element", ElementComponent),
+                    component_scope.require("norn", NornComponent),
                 )
             except ApplicationRuntimeError:
                 raise
@@ -335,6 +336,7 @@ class ApplicationComponent:
         artifact_digest: str,
         module: ModuleDescriptor,
         contracts: Mapping[ContractReference, ContractDefinition],
+        models: Mapping[ModelReference, ModelArtifactDefinition],
     ) -> dict[str, LoadedApplicationDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedApplicationDefinition] = {}
@@ -347,7 +349,12 @@ class ApplicationComponent:
             for definition, runtime_type, module_name in runtimes:
                 aliases = (*sorted(definition.compositions), *sorted(definition.applications))
                 validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(definition, runtime_type, contracts)
+                functions = describe_runtime_functions(
+                    definition,
+                    runtime_type,
+                    contracts,
+                    models,
+                )
                 staged[definition.id] = LoadedApplicationDefinition(
                     definition=definition,
                     runtime_type=runtime_type,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 
 from dix.core.contract import ContractDefinition
+from dix.core.norn import StrandDefinition
 
 from .errors import FunctionBindingError
 from .models import FunctionBinding, FunctionDescriptor
@@ -11,6 +12,8 @@ from .models import FunctionBinding, FunctionDescriptor
 def bind_function(
     function: FunctionDescriptor,
     contract: ContractDefinition,
+    *,
+    strand: StrandDefinition | None = None,
 ) -> FunctionBinding:
     """Validate the minimal one-value Python invocation shape against one contract."""
     if not isinstance(function, FunctionDescriptor):
@@ -41,6 +44,7 @@ def bind_function(
         function_id=function.id,
         owner_id=function.owner_id,
         contract=contract,
+        strand=strand or contract.strand,
         parameter_name=parameter.name,
         call_style=call_style,
     )

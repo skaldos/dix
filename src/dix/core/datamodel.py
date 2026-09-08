@@ -112,7 +112,7 @@ class DatamodelComponent:
         self._default_scope = (
             self.element.create_extension_scope(elements)
             if elements
-            else self.element.default_scope
+            else None
         )
         self._models: dict[UUID, RegisteredModel] = {}
 
@@ -122,8 +122,8 @@ class DatamodelComponent:
 
     @property
     def default_element_scope(self) -> ElementScope:
-        """Return the immutable element fallback used by new model registrations."""
-        return self._default_scope
+        """Return the current element fallback used by new model registrations."""
+        return self._default_scope or self.element.default_scope
 
     def register_model(
         self,
@@ -132,7 +132,7 @@ class DatamodelComponent:
         elements: tuple[ElementBinding, ...] = (),
         fallback_elements: ElementScope | None = None,
     ) -> RegisteredModel:
-        parent = fallback_elements or self._default_scope
+        parent = fallback_elements or self.default_element_scope
         scope = self.element.create_scope(elements, parent=parent)
         processors = {
             field_name: self.element.bind(spec, scope)

@@ -6,8 +6,14 @@ from .errors import (
     FunctionInvocationError,
     FunctionOutputError,
 )
-from .invocation import invoke_function
-from .models import FunctionBinding, FunctionCallStyle, FunctionDescriptor, FunctionSource
+from .invocation import bind_function_runtime, invoke_function
+from .models import (
+    FunctionBinding,
+    FunctionCallStyle,
+    FunctionDescriptor,
+    FunctionRuntimeBinding,
+    FunctionSource,
+)
 
 __all__ = [
     "FunctionBinding",
@@ -18,7 +24,9 @@ __all__ = [
     "FunctionInputError",
     "FunctionInvocationError",
     "FunctionOutputError",
+    "FunctionRuntimeBinding",
     "FunctionSource",
     "bind_function",
+    "bind_function_runtime",
     "invoke_function",
 ]

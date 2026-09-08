@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from dix.core.contract import ContractDefinition, ContractReference
-from dix.core.element import ElementComponent
+from dix.core.model import ModelArtifactDefinition, ModelReference
+from dix.core.norn import NornComponent
 from dix.core.registry import ComponentRegistry
 
 from .models import (
@@ -62,6 +63,7 @@ class CompositionComponent:
         artifact_digest: str,
         module: ModuleDescriptor,
         contracts: Mapping[ContractReference, ContractDefinition],
+        models: Mapping[ModelReference, ModelArtifactDefinition],
     ) -> dict[str, LoadedCompositionDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedCompositionDefinition] = {}
@@ -74,7 +76,12 @@ class CompositionComponent:
             for definition, runtime_type, module_name in runtimes:
                 aliases = (*sorted(definition.components), *sorted(definition.compositions))
                 validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(definition, runtime_type, contracts)
+                functions = describe_runtime_functions(
+                    definition,
+                    runtime_type,
+                    contracts,
+                    models,
+                )
                 staged[definition.id] = LoadedCompositionDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
@@ -268,7 +275,7 @@ class CompositionComponent:
                     runtime,
                     child_apis,
                     loaded_definition.functions,
-                    component_scope.require("element", ElementComponent),
+                    component_scope.require("norn", NornComponent),
                 )
             except CompositionRuntimeError:
                 raise

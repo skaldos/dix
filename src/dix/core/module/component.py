@@ -142,12 +142,14 @@ class ModuleComponent:
                 artifact_digest=inspection.artifact_digest,
                 module=descriptor,
                 contracts=available_contracts,
+                models=available_models,
             )
             staged_applications = self._applications._stage_definitions(
                 inspection.application_definitions,
                 artifact_digest=inspection.artifact_digest,
                 module=descriptor,
                 contracts=available_contracts,
+                models=available_models,
             )
             self._compositions._validate_staged_definitions(staged_compositions)
             self._applications._validate_staged_definitions(

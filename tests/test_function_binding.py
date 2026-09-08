@@ -8,17 +8,20 @@ import pytest
 
 from dix.core import (
     ContractDefinition,
-    ElementComponent,
     ElementSpec,
     FunctionBindingError,
     FunctionDescriptor,
     FunctionExecutionError,
     FunctionInputError,
     FunctionOutputError,
+    NornComponent,
     StrandDefinition,
     bind_function,
+    bind_function_runtime,
+    create_core_component_registry,
     invoke_function,
 )
+from dix.core.function import FunctionBinding, FunctionRuntimeBinding
 
 
 def contract(input_type: str = "string", output_type: str = "string") -> ContractDefinition:
@@ -50,17 +53,25 @@ def descriptor(target, *, identifier: str = "echo") -> FunctionDescriptor:
     )
 
 
+def runtime_binding(
+    binding: FunctionBinding,
+    target,
+) -> tuple[NornComponent, FunctionRuntimeBinding]:
+    norn = create_core_component_registry().require("norn", NornComponent)
+    return norn, bind_function_runtime(binding, target, norn=norn)
+
+
 def test_sync_function_is_invoked_through_authoritative_contract() -> None:
     def echo(value: str) -> str:
         return value
 
     binding = bind_function(descriptor(echo), contract())
+    norn, runtime = runtime_binding(binding, echo)
 
     assert asyncio.run(invoke_function(
-        binding,
-        echo,
+        runtime,
         "hello",
-        elements=ElementComponent.with_core_types(),
+        norn=norn,
     )) == "hello"
 
 
@@ -69,12 +80,12 @@ def test_async_keyword_only_function_is_supported() -> None:
         return value
 
     binding = bind_function(descriptor(echo), contract())
+    norn, runtime = runtime_binding(binding, echo)
 
     assert asyncio.run(invoke_function(
-        binding,
-        echo,
+        runtime,
         "hello",
-        elements=ElementComponent.with_core_types(),
+        norn=norn,
     )) == "hello"
 
 
@@ -100,13 +111,13 @@ def test_invalid_input_prevents_target_call() -> None:
         return value
 
     binding = bind_function(descriptor(echo), contract())
+    norn, runtime = runtime_binding(binding, echo)
 
     with pytest.raises(FunctionInputError):
         asyncio.run(invoke_function(
-            binding,
-            echo,
+            runtime,
             42,
-            elements=ElementComponent.with_core_types(),
+            norn=norn,
         ))
     assert calls == []
 
@@ -116,13 +127,13 @@ def test_invalid_output_is_rejected_after_target_call() -> None:
         return len(value)
 
     binding = bind_function(descriptor(echo), contract())
+    norn, runtime = runtime_binding(binding, echo)
 
     with pytest.raises(FunctionOutputError):
         asyncio.run(invoke_function(
-            binding,
-            echo,
+            runtime,
             "hello",
-            elements=ElementComponent.with_core_types(),
+            norn=norn,
         ))
 
 
@@ -133,12 +144,12 @@ def test_target_failure_preserves_cause() -> None:
         raise failure
 
     binding = bind_function(descriptor(echo), contract())
+    norn, runtime = runtime_binding(binding, echo)
 
     with pytest.raises(FunctionExecutionError) as captured:
         asyncio.run(invoke_function(
-            binding,
-            echo,
+            runtime,
             "hello",
-            elements=ElementComponent.with_core_types(),
+            norn=norn,
         ))
     assert captured.value.__cause__ is failure
