@@ -4,21 +4,6 @@ import inspect
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
-from dix.core.contract import (
-    ContractDefinition,
-    ContractReference,
-    resolve_contract_strand,
-)
-from dix.core.function import (
-    FunctionDescriptor,
-    FunctionRuntimeBinding,
-    bind_function,
-    bind_function_runtime,
-    invoke_function,
-)
-from dix.core.model import ModelArtifactDefinition, ModelReference
-from dix.core.norn import NornComponent
-
 from .models import (
     CompositionDefinition,
     CompositionFunctionDescriptor,
@@ -37,13 +22,9 @@ class CompositionApi:
         self,
         functions: Mapping[str, Callable[..., object]],
         descriptors: Mapping[str, CompositionFunctionDescriptor],
-        runtime_bindings: Mapping[str, FunctionRuntimeBinding],
-        norn: NornComponent,
     ) -> None:
         self._functions = MappingProxyType(dict(functions))
         self._descriptors = MappingProxyType(dict(descriptors))
-        self._runtime_bindings = MappingProxyType(dict(runtime_bindings))
-        self._norn = norn
 
     def require(self, function_id: str) -> Callable[..., object]:
         try:
@@ -63,14 +44,6 @@ class CompositionApi:
 
     def functions(self) -> tuple[CompositionFunctionDescriptor, ...]:
         return tuple(self._descriptors[item] for item in sorted(self._descriptors))
-
-    async def invoke(self, function_id: str, value: object) -> object:
-        self.describe(function_id)
-        return await invoke_function(
-            self._runtime_bindings[function_id],
-            value,
-            norn=self._norn,
-        )
 
     def __getattr__(self, function_id: str) -> Callable[..., object]:
         if function_id.startswith("_"):
@@ -102,6 +75,9 @@ def function_origins(
     definition: CompositionDefinition,
 ) -> dict[str, tuple[str, CompositionFunctionSpec | None]]:
     origins: dict[str, tuple[str, CompositionFunctionSpec | None]] = {}
+    for alias, dependency in definition.compositions.items():
+        for function_id in dependency.export:
+            origins[function_id] = (f"{alias}.{function_id}", None)
     for function_id, function in definition.functions.items():
         origins[function_id] = (function.export or "", function)
     return origins
@@ -110,18 +86,11 @@ def function_origins(
 def describe_runtime_functions(
     definition: CompositionDefinition,
     runtime_type: type[object],
-    contracts: Mapping[ContractReference, ContractDefinition],
-    models: Mapping[ModelReference, ModelArtifactDefinition],
 ) -> tuple[CompositionFunctionDescriptor, ...]:
     descriptors: list[CompositionFunctionDescriptor] = []
-    for function_id, (origin_value, function_spec) in sorted(
+    for function_id, (origin_value, _function_spec) in sorted(
         function_origins(definition).items()
     ):
-        if function_spec is None:
-            raise CompositionRuntimeError(
-                f"composition function requires an explicit contract: "
-                f"{definition.id}.{function_id}"
-            )
         raw_method = runtime_type.__dict__.get(function_id)
         if not inspect.isfunction(raw_method):
             raise CompositionRuntimeError(
@@ -136,32 +105,16 @@ def describe_runtime_functions(
             )
         public_signature = signature.replace(parameters=parameters[1:])
         origin = origin_value or None
-        try:
-            contract = contracts[function_spec.contract]
-        except KeyError as exc:
-            reference = function_spec.contract
-            raise CompositionRuntimeError(
-                f"composition function contract is not loaded: "
-                f"{definition.id}.{function_id} -> {reference.use}@{reference.version!r}"
-            ) from exc
-        function = FunctionDescriptor(
-            id=function_id,
-            owner_id=definition.id,
-            source="local_wrapper" if origin is not None else "local",
-            origin=origin,
-            signature=public_signature,
-            return_annotation=public_signature.return_annotation,
-            docstring=inspect.getdoc(raw_method),
-            is_async=inspect.iscoroutinefunction(raw_method),
-        )
         descriptors.append(
             CompositionFunctionDescriptor(
-                **function.__dict__,
-                binding=bind_function(
-                    function,
-                    contract,
-                    strand=resolve_contract_strand(contract, models),
-                ),
+                id=function_id,
+                composition_id=definition.id,
+                source="local_wrapper" if origin is not None else "local",
+                origin=origin,
+                signature=public_signature,
+                return_annotation=public_signature.return_annotation,
+                docstring=inspect.getdoc(raw_method),
+                is_async=inspect.iscoroutinefunction(raw_method),
             )
         )
     return tuple(descriptors)
@@ -171,11 +124,9 @@ def create_api(
     definition: CompositionDefinition,
     runtime: object,
     dependencies: Mapping[str, CompositionApi],
-    descriptors: tuple[CompositionFunctionDescriptor, ...],
-    norn: NornComponent,
 ) -> CompositionApi:
+    descriptors = describe_runtime_functions(definition, type(runtime))
     functions: dict[str, Callable[..., object]] = {}
-    runtime_bindings: dict[str, FunctionRuntimeBinding] = {}
     for descriptor in descriptors:
         if descriptor.origin is not None:
             alias, dependency_function = descriptor.origin.split(".", 1)
@@ -192,14 +143,7 @@ def create_api(
                 f"composition function is not callable: {definition.id}.{descriptor.id}"
             )
         functions[descriptor.id] = bound
-        runtime_bindings[descriptor.id] = bind_function_runtime(
-            descriptor.binding,
-            bound,
-            norn=norn,
-        )
     return CompositionApi(
         functions=functions,
         descriptors={item.id: item for item in descriptors},
-        runtime_bindings=runtime_bindings,
-        norn=norn,
     )

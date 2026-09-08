@@ -5,15 +5,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from dix.core.contract import ContractReference
 from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import (
     canonical_file,
+    normalize_local_id as normalize_artifact_local_id,
     normalize_module_id,
     require_contained,
-)
-from dix.core.module.validation import (
-    normalize_local_id as normalize_artifact_local_id,
 )
 
 from .models import (
@@ -82,11 +79,12 @@ def inspect_composition_source(path: Path) -> CompositionSource:
     compositions = _parse_compositions(raw.get("compositions", {}))
     shared_aliases = set(components) & set(compositions)
     if shared_aliases:
-        alias = min(shared_aliases)
+        alias = sorted(shared_aliases)[0]
         raise CompositionSpecError(
             f"dependency alias is used by both components and compositions: {alias}"
         )
     functions = _parse_functions(raw.get("functions", {}), compositions)
+    _validate_function_names(compositions, functions)
 
     return CompositionSource(
         local_id=local_id,
@@ -129,14 +127,28 @@ def _parse_compositions(raw: object) -> dict[str, CompositionDependencySpec]:
     for alias, raw_dependency in table.items():
         _validate_alias(alias, "composition alias")
         dependency = _require_mapping(raw_dependency, f"compositions.{alias}")
-        _reject_unknown_keys(dependency, {"use", "config"}, f"compositions.{alias}")
+        _reject_unknown_keys(dependency, {"use", "config", "export"}, f"compositions.{alias}")
         use = normalize_effective_composition_id(
             _require_string(dependency.get("use"), f"compositions.{alias}.use")
         )
         config = _require_mapping(dependency.get("config", {}), f"compositions.{alias}.config")
+        raw_exports = dependency.get("export", [])
+        if not isinstance(raw_exports, list) or not all(
+            isinstance(item, str) for item in raw_exports
+        ):
+            raise CompositionSpecError(f"compositions.{alias}.export must be a list of strings")
+        exports: list[str] = []
+        for raw_export in raw_exports:
+            function_id = _validate_function_id(raw_export, f"compositions.{alias}.export")
+            if function_id in exports:
+                raise CompositionSpecError(
+                    f"duplicate export from composition alias '{alias}': {function_id}"
+                )
+            exports.append(function_id)
         result[alias] = CompositionDependencySpec(
             use=use,
             config=config,
+            export=tuple(exports),
         )
     return dict(sorted(result.items()))
 
@@ -150,12 +162,7 @@ def _parse_functions(
     for function_id, raw_function in table.items():
         _validate_function_id(function_id, "function id")
         value = _require_mapping(raw_function, f"functions.{function_id}")
-        _reject_unknown_keys(
-            value, {"contract", "description", "export"}, f"functions.{function_id}"
-        )
-        contract = _parse_contract_reference(
-            value.get("contract"), f"functions.{function_id}.contract"
-        )
+        _reject_unknown_keys(value, {"description", "export"}, f"functions.{function_id}")
         description = value.get("description")
         if description is not None:
             description = _require_string(description, f"functions.{function_id}.description")
@@ -169,24 +176,32 @@ def _parse_functions(
                 )
             _validate_function_id(parts[1], f"functions.{function_id}.export")
         result[function_id] = CompositionFunctionSpec(
-            contract=contract,
             description=description,
             export=origin,
         )
     return dict(sorted(result.items()))
 
 
-def _parse_contract_reference(raw: object, label: str) -> ContractReference:
-    value = _require_mapping(raw, label)
-    _reject_unknown_keys(value, {"use", "version"}, label)
-    use = _require_string(value.get("use"), f"{label}.use")
-    version = value.get("version")
-    if version is not None:
-        version = _require_string(version, f"{label}.version")
-    try:
-        return ContractReference(use=use, version=version)
-    except ValueError as exc:
-        raise CompositionSpecError(f"invalid {label}: {exc}") from exc
+def _validate_function_names(
+    compositions: Mapping[str, CompositionDependencySpec],
+    functions: Mapping[str, CompositionFunctionSpec],
+) -> None:
+    owners: dict[str, str] = {}
+    for alias, dependency in compositions.items():
+        for function_id in dependency.export:
+            previous = owners.setdefault(function_id, f"compositions.{alias}.export")
+            if previous != f"compositions.{alias}.export":
+                raise CompositionSpecError(
+                    f"duplicate effective function '{function_id}' from {previous} and "
+                    f"compositions.{alias}.export"
+                )
+    for function_id in functions:
+        if function_id in owners:
+            raise CompositionSpecError(
+                f"duplicate effective function '{function_id}' from {owners[function_id]} "
+                f"and functions.{function_id}"
+            )
+        owners[function_id] = f"functions.{function_id}"
 
 
 def _validate_alias(alias: object, label: str) -> str:

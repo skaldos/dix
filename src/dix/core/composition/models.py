@@ -1,13 +1,11 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
-
-from dix.core.contract import ContractReference
-from dix.core.function import FunctionBinding, FunctionDescriptor
 
 if TYPE_CHECKING:
     from dix.core.module.models import ModuleDescriptor
@@ -23,14 +21,15 @@ def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 class CompositionDependencySpec:
     use: str
     config: Mapping[str, Any] = field(default_factory=dict)
+    export: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", _immutable_mapping(self.config))
+        object.__setattr__(self, "export", tuple(self.export))
 
 
 @dataclass(frozen=True)
 class CompositionFunctionSpec:
-    contract: ContractReference
     description: str | None = None
     export: str | None = None
 
@@ -76,7 +75,6 @@ class LoadedCompositionDefinition:
     runtime_type: type[object]
     runtime_module_name: str
     module: ModuleDescriptor
-    functions: tuple[CompositionFunctionDescriptor, ...]
 
 
 @dataclass(frozen=True)
@@ -121,12 +119,15 @@ class CompositionInstanceSpec:
 
 
 @dataclass(frozen=True)
-class CompositionFunctionDescriptor(FunctionDescriptor):
-    binding: FunctionBinding = field(kw_only=True)
-
-    @property
-    def composition_id(self) -> str:
-        return self.owner_id
+class CompositionFunctionDescriptor:
+    id: str
+    composition_id: str
+    source: Literal["local", "local_wrapper"]
+    origin: str | None
+    signature: inspect.Signature
+    return_annotation: object
+    docstring: str | None
+    is_async: bool = False
 
 
 @dataclass(frozen=True)

@@ -13,11 +13,7 @@ from dix.core.composition import (
     CompositionInstanceSpec,
 )
 from dix.core.composition.models import CompositionInstance, LoadedCompositionDefinition
-from dix.core.contract import ContractDefinition, ContractReference
-from dix.core.model import ModelArtifactDefinition, ModelReference
 from dix.core.module.models import ModuleDescriptor
-from dix.core.norn import NornComponent
-from dix.core.registry import ComponentRegistry
 
 from .models import (
     ApplicationDefinition,
@@ -49,13 +45,8 @@ class ApplicationComponent:
 
     component_id = "application"
 
-    def __init__(
-        self,
-        compositions: CompositionComponent,
-        components: ComponentRegistry,
-    ) -> None:
+    def __init__(self, compositions: CompositionComponent) -> None:
         self._compositions = compositions
-        self._components = components
         self._import_namespace = uuid4().hex
         self._definitions: dict[str, LoadedApplicationDefinition] = {}
         self._instances: dict[tuple[str, str], ApplicationInstance] = {}
@@ -172,9 +163,6 @@ class ApplicationComponent:
         ) -> ApplicationInstance:
             loaded = self._require_loaded_definition(definition_id)
             definition = loaded.definition
-            component_scope = self._components.create_scope(
-                f"application:{owner_scope}:{instance_id}"
-            )
             composition_apis: dict[str, CompositionApi] = {}
             composition_instances: dict[str, CompositionInstance] = {}
             composition_owner = f"application:{owner_scope}:{instance_id}"
@@ -227,8 +215,6 @@ class ApplicationComponent:
                     runtime,
                     composition_apis,
                     child_apis,
-                    loaded.functions,
-                    component_scope.require("norn", NornComponent),
                 )
             except ApplicationRuntimeError:
                 raise
@@ -264,7 +250,7 @@ class ApplicationComponent:
             for scope_id, composition_id in reversed(created_compositions):
                 try:
                     self._compositions.destroy_instance(scope_id, composition_id)
-                except Exception as rollback_error:  # noqa: BLE001 - aggregate rollback failures
+                except Exception as rollback_error:
                     rollback_errors.append(rollback_error)
             suffix = ""
             if rollback_errors:
@@ -335,32 +321,18 @@ class ApplicationComponent:
         *,
         artifact_digest: str,
         module: ModuleDescriptor,
-        contracts: Mapping[ContractReference, ContractDefinition],
-        models: Mapping[ModelReference, ModelArtifactDefinition],
     ) -> dict[str, LoadedApplicationDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedApplicationDefinition] = {}
         try:
-            runtimes: list[tuple[ApplicationDefinition, type[object], str]] = []
             for definition in definitions:
                 runtime_type, module_name = self._import_runtime(definition, artifact_digest)
                 imported.append(module_name)
-                runtimes.append((definition, runtime_type, module_name))
-            for definition, runtime_type, module_name in runtimes:
-                aliases = (*sorted(definition.compositions), *sorted(definition.applications))
-                validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(
-                    definition,
-                    runtime_type,
-                    contracts,
-                    models,
-                )
                 staged[definition.id] = LoadedApplicationDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
                     runtime_module_name=module_name,
                     module=module,
-                    functions=functions,
                 )
         except Exception:
             for module_name in imported:
@@ -492,7 +464,10 @@ class ApplicationComponent:
 
         collect(application_id)
         descriptors = {
-            candidate_id: applications[candidate_id].functions
+            candidate_id: describe_runtime_functions(
+                applications[candidate_id].definition,
+                applications[candidate_id].runtime_type,
+            )
             for candidate_id in visited
         }
         application_functions = {

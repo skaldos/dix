@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from dix.core.contract import ContractDefinition, ContractReference
-from dix.core.model import ModelArtifactDefinition, ModelReference
-from dix.core.norn import NornComponent
 from dix.core.registry import ComponentRegistry
 
 from .models import (
@@ -62,32 +59,18 @@ class CompositionComponent:
         *,
         artifact_digest: str,
         module: ModuleDescriptor,
-        contracts: Mapping[ContractReference, ContractDefinition],
-        models: Mapping[ModelReference, ModelArtifactDefinition],
     ) -> dict[str, LoadedCompositionDefinition]:
         imported: list[str] = []
         staged: dict[str, LoadedCompositionDefinition] = {}
         try:
-            runtimes: list[tuple[CompositionDefinition, type[object], str]] = []
             for definition in definitions:
                 runtime_type, module_name = self._import_runtime(definition, artifact_digest)
                 imported.append(module_name)
-                runtimes.append((definition, runtime_type, module_name))
-            for definition, runtime_type, module_name in runtimes:
-                aliases = (*sorted(definition.components), *sorted(definition.compositions))
-                validate_runtime_constructor(runtime_type, aliases)
-                functions = describe_runtime_functions(
-                    definition,
-                    runtime_type,
-                    contracts,
-                    models,
-                )
                 staged[definition.id] = LoadedCompositionDefinition(
                     definition=definition,
                     runtime_type=runtime_type,
                     runtime_module_name=module_name,
                     module=module,
-                    functions=functions,
                 )
         except Exception:
             for module_name in imported:
@@ -107,7 +90,7 @@ class CompositionComponent:
     def _describe_candidate_functions(
         loaded: LoadedCompositionDefinition,
     ) -> tuple[CompositionFunctionDescriptor, ...]:
-        return loaded.functions
+        return describe_runtime_functions(loaded.definition, loaded.runtime_type)
 
     def _publish_definitions(self, staged: Mapping[str, LoadedCompositionDefinition]) -> None:
         self._definitions.update(staged)
@@ -270,13 +253,7 @@ class CompositionComponent:
                     config=config,
                     **injected,
                 )
-                api = create_api(
-                    definition,
-                    runtime,
-                    child_apis,
-                    loaded_definition.functions,
-                    component_scope.require("norn", NornComponent),
-                )
+                api = create_api(definition, runtime, child_apis)
             except CompositionRuntimeError:
                 raise
             except Exception as exc:
@@ -431,7 +408,10 @@ class CompositionComponent:
 
         visit(composition_id)
         descriptors = {
-            definition_id: candidates[definition_id].functions
+            definition_id: describe_runtime_functions(
+                candidates[definition_id].definition,
+                candidates[definition_id].runtime_type,
+            )
             for definition_id in visited
         }
         function_ids = {
@@ -457,7 +437,10 @@ class CompositionComponent:
     ) -> dict[str, tuple[CompositionFunctionDescriptor, ...]]:
         graph = self.describe_dependency_graph(composition_id)
         descriptors = {
-            definition_id: self._require_loaded_definition(definition_id).functions
+            definition_id: describe_runtime_functions(
+                self.require_definition(definition_id),
+                self._require_loaded_definition(definition_id).runtime_type,
+            )
             for definition_id in graph.nodes
         }
         function_ids = {
