@@ -1,11 +1,11 @@
 [app]
 id = "state"
 
-[compositions.state_models]
-use = "dix/state/models"
+[compositions.states]
+use = "acme/state_demo/combined"
 
-[functions.validate]
-description = "Validate owner-provided values with the application-owned state model."
+[functions.snapshot]
+description = "Return the two independent owner states and local reaction count."
 
 [functions.pressure]
-description = "Exercise valid and invalid owner-controlled state values."
+description = "Exercise explicit local state composition boundaries."

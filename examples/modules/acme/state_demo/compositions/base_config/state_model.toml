@@ -1,0 +1,14 @@
+name = "BaseState"
+
+[fields.label]
+type = "string"
+default = "base"
+help = "Human-readable base label."
+
+[fields.count]
+type = "integer"
+default = 1
+
+[fields.metadata]
+type = "object"
+default = { tags = ["base"] }

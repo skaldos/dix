@@ -1,0 +1,7 @@
+[composition]
+id = "base_config"
+
+[compositions.state]
+use = "dix/state/local"
+config = { model = "state_model.toml", initial = { label = "base", count = 1, metadata = { tags = ["base"] } } }
+export = ["get", "set"]

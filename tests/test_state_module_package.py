@@ -36,6 +36,8 @@ def test_wheel_contains_optional_first_party_state_module(tmp_path: Path) -> Non
         "dix/_modules/dix/state/README.md",
         "dix/_modules/dix/state/compositions/models/composition.toml",
         "dix/_modules/dix/state/compositions/models/runtime.py",
+        "dix/_modules/dix/state/compositions/local/composition.toml",
+        "dix/_modules/dix/state/compositions/local/runtime.py",
     } <= names
     assert "state" in metadata.get_all("Provides-Extra", [])
     assert "config" not in metadata.get_all("Provides-Extra", [])
@@ -84,3 +86,4 @@ def test_wheel_installed_state_module_resolves_a_model(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert "base-without-pydantic=ok" in completed.stdout
     assert "wheel-state-module=ok" in completed.stdout
+    assert "wheel-state-graph=ok" in completed.stdout

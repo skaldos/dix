@@ -1,0 +1,23 @@
+[composition]
+id = "combined"
+
+[compositions.base]
+use = "acme/state_demo/base_config"
+
+[compositions.reactive]
+use = "acme/state_demo/reactive_config"
+
+[functions.get_base]
+description = "Return the explicitly exposed base state."
+
+[functions.set_base]
+description = "Replace the explicitly exposed base state."
+
+[functions.get_reactive]
+description = "Return the explicitly exposed reactive state."
+
+[functions.set_reactive]
+description = "Replace reactive state through its owner wrapper."
+
+[functions.reaction_count]
+description = "Return reactions reported by the reactive owner."

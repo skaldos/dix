@@ -1,10 +1,16 @@
-# State model pressure application
+# Local state composition pressure application
 
-This example owns a declarative state model specification and composes
-`dix/state/models` only to construct its local Pydantic model type. Concrete values remain in
-the application and are validated there with `model_validate()`.
+This example composes the optional `dix/state` module without extending the DIX core:
 
-Run the visible pressure path from the repository root with:
+- `base_config` transparently exports `get` and `set` from one `dix/state/local` instance,
+- `reactive_config` wraps `set` and owns its reaction policy,
+- `combined` uses only the explicitly exposed functions of both direct dependencies,
+- the `state` application drives the graph without accessing model or runtime internals.
+
+Each owner keeps one `state_model.toml`. Multiple states are ordinary composition instances, not a
+second registry inside `dix/state/local`.
+
+Run the source pressure path from the repository root:
 
 ```bash
 uv run --extra state python examples/run_state_demo.py

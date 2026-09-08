@@ -1,0 +1,9 @@
+name = "ReactiveState"
+
+[fields.mode]
+type = "string"
+default = "idle"
+
+[fields.enabled]
+type = "boolean"
+default = true

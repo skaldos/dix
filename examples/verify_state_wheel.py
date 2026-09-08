@@ -86,7 +86,22 @@ def main() -> int:
     )
     sys.stdout.write(probe.stdout)
     sys.stderr.write(probe.stderr)
-    return probe.returncode
+    if probe.returncode != 0:
+        return probe.returncode
+
+    pressure = _run(
+        str(state / "bin" / "python"),
+        str(repository / "examples" / "run_state_demo.py"),
+        cwd=workspace,
+    )
+    sys.stderr.write(pressure.stderr)
+    if pressure.returncode != 0:
+        return pressure.returncode
+    if '"reactions": 1' not in pressure.stdout:
+        sys.stderr.write(pressure.stdout)
+        return 1
+    print("wheel-state-graph=ok")
+    return 0
 
 
 if __name__ == "__main__":

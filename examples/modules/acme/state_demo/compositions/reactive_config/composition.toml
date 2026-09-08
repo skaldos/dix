@@ -1,0 +1,13 @@
+[composition]
+id = "reactive_config"
+
+[compositions.state]
+use = "dix/state/local"
+config = { model = "state_model.toml", initial = { mode = "idle", enabled = true } }
+export = ["get"]
+
+[functions.set]
+description = "Replace reactive state and react locally only to a real change."
+
+[functions.reaction_count]
+description = "Return the number of owner-local reactions."
