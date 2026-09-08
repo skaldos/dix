@@ -1,0 +1,5 @@
+[composition]
+id = "pydantic"
+
+[functions.resolve]
+description = "Resolve a declarative config model specification into a Pydantic model type."

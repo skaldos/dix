@@ -17,6 +17,9 @@ cli = [
   "click>=8.1,<9",
   "typer>=0.27,<0.28",
 ]
+config = [
+  "pydantic>=2,<3",
+]
 dev = [
   "pytest>=8.0",
 ]
