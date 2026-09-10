@@ -1,0 +1,23 @@
+[composition]
+id = "control"
+
+[compositions.daemon]
+use = "dix/roba/daemon"
+
+[functions.bootstrap]
+description = "Start a fresh ROBA daemon and create the DIX control context."
+
+[functions.control_credentials]
+description = "Read DIX control credentials through the administrative root socket."
+
+[functions.create_context]
+description = "Create one managed ROBA context and its scoped manager socket."
+
+[functions.context_credentials]
+description = "Read one managed context owner through its scoped manager socket."
+
+[functions.get]
+description = "Return the daemon configuration owned by the control composition."
+
+[functions.set]
+description = "Replace the daemon configuration owned by the control composition."
