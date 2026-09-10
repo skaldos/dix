@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-import os
 from pathlib import Path
 from typing import Protocol
 
@@ -21,7 +20,7 @@ CONTROL_CONTEXT_ID = "dix.control"
 ROOT_SOCKET_ID = "admin"
 
 
-class DaemonApi(Protocol):
+class ConfigApi(Protocol):
     def require(self, function_id: str) -> Callable[..., object]: ...
 
 
@@ -33,34 +32,38 @@ class Runtime:
         *,
         context: CompositionRuntimeContext,
         config: Mapping[str, object],
-        daemon: DaemonApi,
+        roba_config: ConfigApi,
     ) -> None:
         self.context = context
         self.config = config
-        self.daemon = daemon
+        self.roba_config = roba_config
 
     def get(self) -> dict[str, object]:
         """Return the daemon configuration owned by this registry."""
-        value = self.daemon.require("get")()
+        value = self.roba_config.require("get")()
         if not isinstance(value, dict):
             raise TypeError("ROBA daemon config get must return a dictionary")
         return value
 
     def set(self, values: Mapping[str, object]) -> bool:
         """Replace the daemon configuration owned by this registry."""
-        result = self.daemon.require("set")(values)
+        result = self.roba_config.require("set")(values)
         if type(result) is not bool:
             raise TypeError("ROBA daemon config set must return a boolean")
         return result
 
-    def bootstrap(self) -> dict[str, object]:
-        """Start a fresh daemon and create the DIX control context and root socket."""
+    def bootstrap(
+        self,
+        *,
+        control_locator: str,
+        control_token: str,
+    ) -> dict[str, object]:
+        """Attach to a running daemon and create the DIX control context and root socket."""
         values = self._values()
-        daemon = self.daemon.require("start")()
         daemon_id = self._daemon_id(values)
         environment = self._environment()
-        control_locator = str(daemon.control_locator)
-        control_token = _required_string(daemon.control_token, "control_token")
+        control_locator = _required_string(control_locator, "control_locator")
+        control_token = _required_string(control_token, "control_token")
         context = None
         root_owner: ContextApi | None = None
         root_socket_attempted = False
@@ -109,17 +112,12 @@ class Runtime:
                     ).context_delete(context_id=CONTROL_CONTEXT_ID)
                 except Exception as cleanup_error:
                     cleanup_errors.append(f"control context cleanup: {cleanup_error}")
-            try:
-                self.daemon.require("stop")()
-            except Exception as cleanup_error:
-                cleanup_errors.append(f"daemon cleanup: {cleanup_error}")
             _raise_with_cleanup(error, cleanup_errors)
         assert context is not None
         assert root_socket is not None
         return {
             "daemon_id": daemon_id,
             "control_locator": control_locator,
-            "control_socket": str(daemon.control_socket),
             "control_context": CONTROL_CONTEXT_ID,
             "control_context_locator": str(context.direct_locator),
             "control_owner_token": context.owner_token,
@@ -235,28 +233,20 @@ class Runtime:
         }
 
     def _values(self) -> Mapping[str, object]:
-        values = self.daemon.require("get")()
+        values = self.roba_config.require("get")()
         if not isinstance(values, Mapping):
             raise TypeError("ROBA daemon config must return a mapping")
         return values
 
     def _environment(self) -> Mapping[str, str]:
-        values = self.daemon.require("get")()
-        environment = {
+        environment = self.roba_config.require("environment")()
+        if not isinstance(environment, Mapping):
+            raise TypeError("ROBA config environment must return a mapping")
+        return {
             key: value
-            for key, value in self._base_environment().items()
+            for key, value in environment.items()
             if isinstance(key, str) and isinstance(value, str)
         }
-        environment["ROBA_RUNTIME_ROOT"] = _required_string(
-            values.get("runtime_root"), "runtime_root"
-        )
-        environment["ROBA_LOGS_ROOT"] = _required_string(
-            values.get("logs_root"), "logs_root"
-        )
-        return environment
-
-    def _base_environment(self) -> Mapping[str, str]:
-        return {key: value for key, value in os.environ.items() if not key.startswith("ROBA_")}
 
     def _daemon_id(self, values: Mapping[str, object]) -> str:
         return _required_string(values.get("daemon_id"), "daemon_id")

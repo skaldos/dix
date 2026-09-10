@@ -1,11 +1,11 @@
 [composition]
 id = "control"
 
-[compositions.daemon]
-use = "dix/roba/daemon"
+[compositions.roba_config]
+use = "dix/roba/config"
 
 [functions.bootstrap]
-description = "Start a fresh ROBA daemon and create the DIX control context."
+description = "Attach to a running ROBA daemon and create the DIX control context."
 
 [functions.control_credentials]
 description = "Read DIX control credentials through the administrative root socket."
