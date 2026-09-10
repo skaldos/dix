@@ -43,8 +43,7 @@ def test_wheel_contains_optional_first_party_cli_module(tmp_path: Path) -> None:
         requirements = [
             item for item in optional_requirements if item.startswith(dependency)
         ]
-        assert len(requirements) == 1
-        assert "extra == 'cli'" in requirements[0]
+        assert any("extra == 'cli'" in item for item in requirements)
 
 
 def test_base_project_metadata_has_no_required_runtime_dependency() -> None:

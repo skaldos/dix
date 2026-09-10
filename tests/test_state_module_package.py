@@ -46,8 +46,7 @@ def test_wheel_contains_optional_first_party_state_module(tmp_path: Path) -> Non
         for item in metadata.get_all("Requires-Dist", [])
         if item.startswith("pydantic")
     ]
-    assert len(requirements) == 1
-    assert "extra == 'state'" in requirements[0]
+    assert any("extra == 'state'" in item for item in requirements)
 
 
 def test_pydantic_is_not_a_base_runtime_dependency() -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import subprocess
 import sys
 from pathlib import Path
@@ -30,10 +32,11 @@ def test_cli_projects_named_daemon_options_and_uses_explicit_config(tmp_path: Pa
         assert option in help_result.stdout
     assert "DIX_ROBA_DAEMON_START_DAEMON_ID" in help_result.stdout
 
+    root = Path(tempfile.mkdtemp(prefix="dix-roba-"))
     config = (
         "--daemon_id", "cli-test",
-        "--runtime_root", str(tmp_path / "runtime"),
-        "--logs_root", str(tmp_path / "logs"),
+        "--runtime_root", str(root / "runtime"),
+        "--logs_root", str(root / "logs"),
         "--timeout", "5",
     )
     started = _run(launcher, "daemon", "start", *config)
@@ -45,3 +48,4 @@ def test_cli_projects_named_daemon_options_and_uses_explicit_config(tmp_path: Pa
     finally:
         stopped = _run(launcher, "daemon", "stop", *config)
     assert stopped.returncode == 0, stopped.stderr
+    shutil.rmtree(root, ignore_errors=True)

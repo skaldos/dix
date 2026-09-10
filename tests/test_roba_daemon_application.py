@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+import shutil
+import tempfile
 
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
@@ -18,10 +20,11 @@ def test_application_sets_the_daemon_owned_config_per_invocation(tmp_path: Path)
         ApplicationInstanceSpec("daemon", "dix/roba/daemon", {}, tmp_path),
         owner_scope_id="test",
     )
+    root = Path(tempfile.mkdtemp(prefix="dix-roba-"))
     config = {
         "daemon_id": "application-test",
-        "runtime_root": str(tmp_path / "runtime"),
-        "logs_root": str(tmp_path / "logs"),
+        "runtime_root": str(root / "runtime"),
+        "logs_root": str(root / "logs"),
         "timeout": 5.0,
     }
     creation = instance.api.require("start")(**config)
@@ -31,3 +34,4 @@ def test_application_sets_the_daemon_owned_config_per_invocation(tmp_path: Path)
         assert instance.api.require("status")(**config)["daemon_id"] == "application-test"
     finally:
         instance.api.require("stop")(**config)
+        shutil.rmtree(root, ignore_errors=True)

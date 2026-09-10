@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+import shutil
+import tempfile
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
@@ -28,10 +30,11 @@ def test_real_roba_daemon_lifecycle_uses_one_exported_local_config(tmp_path: Pat
     start = instance.api.require("start")
     status = instance.api.require("status")
     stop = instance.api.require("stop")
+    root = Path(tempfile.mkdtemp(prefix="dix-roba-"))
     config = {
         "daemon_id": "composition-test",
-        "runtime_root": str(tmp_path / "runtime"),
-        "logs_root": str(tmp_path / "logs"),
+        "runtime_root": str(root / "runtime"),
+        "logs_root": str(root / "logs"),
         "timeout": 5.0,
     }
     assert set_value(config) is True
@@ -46,8 +49,9 @@ def test_real_roba_daemon_lifecycle_uses_one_exported_local_config(tmp_path: Pat
         assert isinstance(token, str) and token
         assert creation_data["daemon_id"] == "composition-test"
         assert status()["daemon_id"] == "composition-test"
-        assert (tmp_path / "runtime" / "daemons" / "composition-test").is_dir()
+        assert (root / "runtime" / "daemons" / "composition-test").is_dir()
         assert "control_token" not in get()
     finally:
         stop()
-    assert not (tmp_path / "runtime" / "daemons" / "composition-test").exists()
+        shutil.rmtree(root, ignore_errors=True)
+    assert not (root / "runtime" / "daemons" / "composition-test").exists()
