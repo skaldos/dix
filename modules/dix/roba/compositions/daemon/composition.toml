@@ -1,0 +1,15 @@
+[composition]
+id = "daemon"
+
+[compositions.roba_config]
+use = "dix/roba/config"
+export = ["get", "set"]
+
+[functions.start]
+description = "Start one ROBA daemon from the current local configuration."
+
+[functions.status]
+description = "Return status for the configured ROBA daemon."
+
+[functions.stop]
+description = "Stop the configured ROBA daemon."
