@@ -20,6 +20,12 @@ cli = [
 state = [
   "pydantic>=2,<3",
 ]
+roba = [
+  "roba>=0.1.0",
+  "click>=8.1,<9",
+  "typer>=0.27,<0.28",
+  "pydantic>=2,<3",
+]
 dev = [
   "pytest>=8.0",
 ]
@@ -36,3 +42,6 @@ pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100
+
+[tool.uv.sources]
+roba = { path = "../roba", editable = true }

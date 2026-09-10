@@ -1,0 +1,15 @@
+[composition]
+id = "config"
+
+[compositions.state]
+use = "dix/state/local"
+config = { model = "state_model.toml" }
+
+[functions.get]
+description = "Return the complete ROBA daemon configuration."
+
+[functions.set]
+description = "Validate and replace the complete ROBA daemon configuration."
+
+[functions.environment]
+description = "Build one explicit ROBA environment from the current local configuration."

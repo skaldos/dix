@@ -1,0 +1,17 @@
+name = "RobaDaemonConfig"
+
+[fields.daemon_id]
+type = "string"
+default = "default"
+
+[fields.runtime_root]
+type = "string"
+default = "~/.roba/runtime"
+
+[fields.logs_root]
+type = "string"
+default = "~/.roba/logs"
+
+[fields.timeout]
+type = "number"
+default = 5.0
