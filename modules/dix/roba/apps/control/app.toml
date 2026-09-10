@@ -5,7 +5,7 @@ id = "control"
 use = "dix/roba/control"
 
 [functions.bootstrap]
-description = "Start a fresh ROBA daemon and create the DIX control registry."
+description = "Attach to a running ROBA daemon and create the DIX control registry."
 
 [functions.control_credentials]
 description = "Read DIX control credentials through the root socket."

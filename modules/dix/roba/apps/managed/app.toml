@@ -1,0 +1,11 @@
+[app]
+id = "managed"
+
+[apps.daemon]
+use = "dix/roba/daemon"
+
+[apps.control]
+use = "dix/roba/control"
+
+[functions.start]
+description = "Start and attach one DIX-owned ROBA daemon."

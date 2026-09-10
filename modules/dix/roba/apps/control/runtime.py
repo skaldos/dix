@@ -27,14 +27,19 @@ class Runtime:
     def bootstrap(
         self,
         *,
+        control_locator: str,
+        control_token: str,
         daemon_id: str = "default",
         runtime_root: str = "~/.roba/runtime",
         logs_root: str = "~/.roba/logs",
         timeout: float = 5.0,
     ) -> object:
-        """Start a fresh ROBA daemon and create the DIX control registry."""
+        """Attach to a running ROBA daemon and create the DIX control registry."""
         self._set_config(daemon_id, runtime_root, logs_root, timeout)
-        return self.control.require("bootstrap")()
+        return self.control.require("bootstrap")(
+            control_locator=control_locator,
+            control_token=control_token,
+        )
 
     def control_credentials(
         self,
