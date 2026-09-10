@@ -33,7 +33,9 @@ def test_roba_wheel_contains_the_complete_first_party_module_and_optional_extra(
         "dix/_modules/dix/roba/README.md",
         "dix/_modules/dix/roba/compositions/config/composition.toml",
         "dix/_modules/dix/roba/compositions/daemon/composition.toml",
+        "dix/_modules/dix/roba/compositions/control/composition.toml",
         "dix/_modules/dix/roba/apps/daemon/app.toml",
+        "dix/_modules/dix/roba/apps/control/app.toml",
         "dix/_modules/dix/roba/apps/cli/app.toml",
     } <= names
     assert "roba" in metadata.get_all("Provides-Extra", [])

@@ -78,6 +78,11 @@ def main() -> int:
                 modules.load_module(first_party_module_path(module_id), module_id=module_id)
             with TemporaryDirectory(prefix="dix-roba-wheel-") as raw:
                 root = Path(raw)
+                cli = applications.create_instance(
+                    ApplicationInstanceSpec("cli", "dix/roba/cli", {}, root),
+                    owner_scope_id="wheel-cli",
+                )
+                assert [item.id for item in cli.api.functions()] == ["main"]
                 config = {
                     "daemon_id": "wheel",
                     "runtime_root": str(root / "runtime"),
