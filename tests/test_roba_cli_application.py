@@ -44,6 +44,16 @@ def test_cli_projects_named_daemon_options_and_uses_explicit_config(tmp_path: Pa
         assert option in control_help.stdout
     assert "DIX_ROBA_CONTROL_CREATE_CONTEXT" in control_help.stdout
 
+    bootstrap_help = _run(launcher, "control", "bootstrap", "--help")
+    assert bootstrap_help.returncode == 0, bootstrap_help.stderr
+    for option in ("--control_locator", "--control_token", "--daemon_id"):
+        assert option in bootstrap_help.stdout
+
+    managed_help = _run(launcher, "managed", "start", "--help")
+    assert managed_help.returncode == 0, managed_help.stderr
+    for option in ("--daemon_id", "--runtime_root", "--logs_root", "--timeout"):
+        assert option in managed_help.stdout
+
     root = Path(tempfile.mkdtemp(prefix="dix-roba-"))
     config = (
         "--daemon_id", "cli-test",

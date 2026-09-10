@@ -10,5 +10,8 @@ use = "dix/roba/daemon"
 [apps.control]
 use = "dix/roba/control"
 
+[apps.managed]
+use = "dix/roba/managed"
+
 [functions.main]
 description = "Run the explicit DIX ROBA daemon CLI."

@@ -17,6 +17,7 @@ from dix.bootstrap import build_launcher
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_roba.toml"
+_TOKEN = __import__("re").compile(r"control_token='([^']+)'")
 
 
 def _run(launcher: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -57,32 +58,64 @@ def _environment(root: Path) -> dict[str, str]:
     }
 
 
+def _token(value: str) -> str:
+    match = _TOKEN.search(value)
+    assert match is not None, value
+    return match.group(1)
+
+
 def _fingerprint(value: object) -> str:
     return hashlib.sha256(str(value).encode()).hexdigest()
 
 
-def test_cli_processes_rebind_capabilities_and_clear_ephemeral_registry(tmp_path: Path) -> None:
+def test_cli_processes_raw_attach_rebind_capabilities_and_clear_registry(
+    tmp_path: Path,
+) -> None:
     launcher = build_launcher(SPEC, tmp_path / "dix_roba.py")
     root = Path(tempfile.mkdtemp(prefix="dix-r-"))
     config = _config(root)
     environment = _environment(root)
     bootstrap: dict[str, object] | None = None
+    created: dict[str, object] | None = None
+    raw_token = ""
     try:
-        # Process A: daemon, dix.control, root state and tokenless admin socket.
-        bootstrap = _mapping(_run(launcher, "control", "bootstrap", *config))
+        # Process A: raw daemon only. It must not create dix.control implicitly.
+        raw = _run(launcher, "daemon", "start", *config)
+        assert raw.returncode == 0, raw.stderr
+        raw_token = _token(raw.stdout)
+        not_bootstrapped = _run(
+            launcher,
+            "control",
+            "control_credentials",
+            *config,
+        )
+        assert not_bootstrapped.returncode != 0
+
+        # Process B: attach the separately started daemon with explicit credentials.
+        bootstrap = _mapping(
+            _run(
+                launcher,
+                "control",
+                "bootstrap",
+                "--control_locator",
+                "id:e2e-registry",
+                "--control_token",
+                raw_token,
+                *config,
+            )
+        )
         assert bootstrap["control_context"] == "dix.control"
         assert bootstrap["root_socket_id"] == "admin"
         assert Path(str(bootstrap["root_socket"])).is_socket()
+        assert _fingerprint(bootstrap["control_token"]) == _fingerprint(raw_token)
 
-        # Process B: root credentials are recovered without passing a token.
-        credentials = _mapping(
-            _run(launcher, "control", "control_credentials", *config)
-        )
+        # Process C: root credentials are recovered without passing a token.
+        credentials = _mapping(_run(launcher, "control", "control_credentials", *config))
         assert credentials["control_locator"] == bootstrap["control_locator"]
         assert credentials["control_token"] == bootstrap["control_token"]
         assert credentials["owner_token"] == bootstrap["control_owner_token"]
 
-        # Process C: target Context, Registry Instance and scoped manager socket.
+        # Process D: target Context, Registry Instance and scoped manager socket.
         created = _mapping(
             _run(
                 launcher,
@@ -96,7 +129,7 @@ def test_cli_processes_rebind_capabilities_and_clear_ephemeral_registry(tmp_path
         assert created["manager_socket_id"] == "test01"
         assert Path(str(created["manager_socket"])).is_socket()
 
-        # Process D: target credentials are recovered through the manager socket.
+        # Process E: target credentials are recovered through the manager socket.
         rebound = _mapping(
             _run(
                 launcher,
@@ -159,7 +192,7 @@ def test_cli_processes_rebind_capabilities_and_clear_ephemeral_registry(tmp_path
         assert len(set(token_fingerprints.values())) == 3
         assert all(len(value) == 64 for value in token_fingerprints.values())
     finally:
-        if bootstrap is not None:
+        if raw_token:
             stopped = _run(launcher, "daemon", "stop", *config)
             assert stopped.returncode == 0, stopped.stderr
         for path in (root / "runtime", root / "logs"):
@@ -167,10 +200,41 @@ def test_cli_processes_rebind_capabilities_and_clear_ephemeral_registry(tmp_path
                 for file in path.rglob("*"):
                     if file.is_file():
                         content = file.read_text(errors="ignore")
+                        if raw_token:
+                            assert raw_token not in content
                         if bootstrap is not None:
-                            assert str(bootstrap["control_token"]) not in content
                             assert str(bootstrap["control_owner_token"]) not in content
         shutil.rmtree(root, ignore_errors=True)
 
+    assert bootstrap is not None
+    assert created is not None
     assert not Path(str(bootstrap["root_socket"])).exists()
     assert not Path(str(created["manager_socket"])).exists()
+
+
+def test_cli_managed_start_is_a_single_explicit_path(tmp_path: Path) -> None:
+    launcher = build_launcher(SPEC, tmp_path / "dix_roba.py")
+    root = Path(tempfile.mkdtemp(prefix="dix-r-"))
+    config = (
+        "--daemon_id",
+        "managed-cli",
+        "--runtime_root",
+        str(root / "runtime"),
+        "--logs_root",
+        str(root / "logs"),
+        "--timeout",
+        "5",
+    )
+    result = _run(launcher, "managed", "start", *config)
+    assert result.returncode == 0, result.stderr
+    try:
+        value = ast.literal_eval(result.stdout.strip())
+        assert value["daemon_id"] == "managed-cli"
+        assert value["control_context"] == "dix.control"
+        status = _run(launcher, "daemon", "status", *config)
+        assert status.returncode == 0, status.stderr
+        assert "managed-cli" in status.stdout
+    finally:
+        stopped = _run(launcher, "daemon", "stop", *config)
+        assert stopped.returncode == 0, stopped.stderr
+    shutil.rmtree(root, ignore_errors=True)
