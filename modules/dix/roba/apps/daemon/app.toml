@@ -1,0 +1,14 @@
+[app]
+id = "daemon"
+
+[compositions.daemon]
+use = "dix/roba/daemon"
+
+[functions.start]
+description = "Set explicit ROBA configuration and start one daemon."
+
+[functions.status]
+description = "Set explicit ROBA configuration and return daemon status."
+
+[functions.stop]
+description = "Set explicit ROBA configuration and stop one daemon."

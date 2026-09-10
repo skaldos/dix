@@ -24,6 +24,7 @@ def _components() -> CompositionComponent:
     modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
     modules.load_module(first_party_module_path("dix/state"), module_id="dix/state")
+    modules.load_module(first_party_module_path("dix/cli"), module_id="dix/cli")
     modules.load_module(first_party_module_path("dix/roba"), module_id="dix/roba")
     return compositions
 

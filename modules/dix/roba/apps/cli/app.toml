@@ -1,0 +1,11 @@
+[app]
+id = "cli"
+
+[compositions.typer]
+use = "dix/cli/typer"
+
+[apps.daemon]
+use = "dix/roba/daemon"
+
+[functions.main]
+description = "Run the explicit DIX ROBA daemon CLI."
