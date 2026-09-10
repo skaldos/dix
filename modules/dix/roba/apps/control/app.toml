@@ -1,0 +1,17 @@
+[app]
+id = "control"
+
+[compositions.control]
+use = "dix/roba/control"
+
+[functions.bootstrap]
+description = "Start a fresh ROBA daemon and create the DIX control registry."
+
+[functions.control_credentials]
+description = "Read DIX control credentials through the root socket."
+
+[functions.create_context]
+description = "Create one managed context and its scoped manager socket."
+
+[functions.context_credentials]
+description = "Read one managed context owner through its manager socket."
