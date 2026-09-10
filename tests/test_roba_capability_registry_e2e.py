@@ -238,3 +238,30 @@ def test_cli_managed_start_is_a_single_explicit_path(tmp_path: Path) -> None:
         stopped = _run(launcher, "daemon", "stop", *config)
         assert stopped.returncode == 0, stopped.stderr
     shutil.rmtree(root, ignore_errors=True)
+
+
+def test_cli_attach_failure_does_not_stop_raw_daemon(tmp_path: Path) -> None:
+    launcher = build_launcher(SPEC, tmp_path / "dix_roba.py")
+    root = Path(tempfile.mkdtemp(prefix="dix-r-"))
+    config = _config(root)
+    raw = _run(launcher, "daemon", "start", *config)
+    assert raw.returncode == 0, raw.stderr
+    try:
+        failed = _run(
+            launcher,
+            "control",
+            "bootstrap",
+            "--control_locator",
+            "id:e2e-registry",
+            "--control_token",
+            "roba-control1-invalid",
+            *config,
+        )
+        assert failed.returncode != 0
+        status = _run(launcher, "daemon", "status", *config)
+        assert status.returncode == 0, status.stderr
+        assert "e2e-registry" in status.stdout
+    finally:
+        stopped = _run(launcher, "daemon", "stop", *config)
+        assert stopped.returncode == 0, stopped.stderr
+    shutil.rmtree(root, ignore_errors=True)

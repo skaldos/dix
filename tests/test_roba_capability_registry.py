@@ -8,7 +8,14 @@ import pytest
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 from dix.modules import first_party_module_path
-from roba import ContextApi, RobaClient, TransportError, principal_socket, stop_daemon
+from roba import (
+    ContextApi,
+    RobaClient,
+    TransportError,
+    principal_socket,
+    start_daemon,
+    stop_daemon,
+)
 
 
 def _instance(tmp_path: Path):
@@ -43,13 +50,28 @@ def _stop(result: dict[str, object], config: dict[str, object]) -> None:
     )
 
 
+def _bootstrap(instance, config: dict[str, object]) -> dict[str, object]:
+    creation = start_daemon(
+        str(config["daemon_id"]),
+        timeout=5,
+        env={
+            "ROBA_RUNTIME_ROOT": str(config["runtime_root"]),
+            "ROBA_LOGS_ROOT": str(config["logs_root"]),
+        },
+    )
+    return instance.api.require("bootstrap")(
+        control_locator=str(creation.control_locator),
+        control_token=creation.control_token,
+    )
+
+
 def test_managed_context_rebinds_owner_through_scoped_manager_socket(
     tmp_path: Path,
 ) -> None:
     instance = _instance(tmp_path)
     config = _config()
     assert instance.api.require("set")(config) is True
-    bootstrap = instance.api.require("bootstrap")()
+    bootstrap = _bootstrap(instance, config)
     try:
         created = instance.api.require("create_context")("test01")
         assert set(created) == {
@@ -111,7 +133,7 @@ def test_failed_manager_socket_creation_rolls_back_owned_objects(
     instance = _instance(tmp_path)
     config = _config()
     assert instance.api.require("set")(config) is True
-    bootstrap = instance.api.require("bootstrap")()
+    bootstrap = _bootstrap(instance, config)
     original_socket_create = ContextApi.socket_create
 
     def fail_manager_socket(self: ContextApi, **kwargs: object) -> dict[str, object]:

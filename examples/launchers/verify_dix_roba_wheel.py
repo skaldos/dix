@@ -96,6 +96,19 @@ def main() -> int:
                 app.api.require("start")(**config)
                 assert app.api.require("status")(**config)["daemon_id"] == "wheel"
                 app.api.require("stop")(**config)
+                managed = applications.create_instance(
+                    ApplicationInstanceSpec("managed", "dix/roba/managed", {}, root),
+                    owner_scope_id="wheel",
+                )
+                managed_result = managed.api.require("start")(**config)
+                assert managed_result["control_context"] == "dix.control"
+                roba.stop_daemon(
+                    daemon="id:wheel",
+                    env={
+                        "ROBA_RUNTIME_ROOT": str(root / "runtime"),
+                        "ROBA_LOGS_ROOT": str(root / "logs"),
+                    },
+                )
             print(f"roba-version={roba.__version__}")
             print("wheel-roba-module=ok")
             '''

@@ -6,7 +6,7 @@ from pathlib import Path
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
 from dix.modules import first_party_module_path
-from roba import stop_daemon
+from roba import start_daemon, stop_daemon
 
 
 def _application(tmp_path: Path):
@@ -38,7 +38,19 @@ def test_control_application_exposes_four_functions_with_invocation_config(
         "logs_root": str(root / "logs"),
         "timeout": 5.0,
     }
-    bootstrap = application.api.require("bootstrap")(**config)
+    creation = start_daemon(
+        str(config["daemon_id"]),
+        timeout=5,
+        env={
+            "ROBA_RUNTIME_ROOT": str(config["runtime_root"]),
+            "ROBA_LOGS_ROOT": str(config["logs_root"]),
+        },
+    )
+    bootstrap = application.api.require("bootstrap")(
+        control_locator=str(creation.control_locator),
+        control_token=creation.control_token,
+        **config,
+    )
     try:
         credentials = application.api.require("control_credentials")(**config)
         assert credentials["control_token"] == bootstrap["control_token"]
