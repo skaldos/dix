@@ -8,6 +8,7 @@ from typing import Protocol
 from roba import (
     ContextApi,
     ControlApi,
+    ResourceNotFound,
     RobaClient,
     create_context,
     principal_socket,
@@ -62,7 +63,7 @@ class Runtime:
         control_token = _required_string(daemon.control_token, "control_token")
         context = None
         root_owner: ContextApi | None = None
-        root_socket_created = False
+        root_socket_attempted = False
         try:
             context = create_context(
                 context_id=CONTROL_CONTEXT_ID,
@@ -83,19 +84,22 @@ class Runtime:
             )
             root_owner.set("control_token", control_token)
             root_owner.set("owner_token", context.owner_token)
+            root_socket_attempted = True
             root_socket = root_owner.socket_create(
                 socket_id=ROOT_SOCKET_ID,
                 name=ROOT_SOCKET_ID,
                 read=["context"],
             )
-            root_socket_created = True
         except Exception as error:
             cleanup_errors: list[str] = []
-            if context is not None and root_owner is not None and root_socket_created:
+            if root_owner is not None and root_socket_attempted:
                 try:
                     root_owner.socket_delete(socket_id=ROOT_SOCKET_ID)
+                except ResourceNotFound:
+                    pass
                 except Exception as cleanup_error:
                     cleanup_errors.append(f"root socket cleanup: {cleanup_error}")
+            if context is not None:
                 try:
                     _control_client(
                         control_locator,
@@ -163,7 +167,7 @@ class Runtime:
             self._timeout(values),
         )
         instance_created = False
-        socket_created = False
+        socket_attempted = False
         try:
             registry_owner.instance_create(
                 instance_id=context_id,
@@ -174,17 +178,19 @@ class Runtime:
                 },
             )
             instance_created = True
+            socket_attempted = True
             socket_record = registry_owner.socket_create(
                 socket_id=context_id,
                 name=context_id,
                 read=[f"instance:{context_id}"],
             )
-            socket_created = True
         except Exception as error:
             cleanup_errors: list[str] = []
-            if socket_created:
+            if socket_attempted:
                 try:
                     registry_owner.socket_delete(socket_id=context_id)
+                except ResourceNotFound:
+                    pass
                 except Exception as cleanup_error:
                     cleanup_errors.append(f"manager socket cleanup: {cleanup_error}")
             if instance_created:

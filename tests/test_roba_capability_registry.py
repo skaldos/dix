@@ -8,7 +8,7 @@ import pytest
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 from dix.modules import first_party_module_path
-from roba import ContextApi, RobaClient, TransportError, stop_daemon
+from roba import ContextApi, RobaClient, TransportError, principal_socket, stop_daemon
 
 
 def _instance(tmp_path: Path):
@@ -102,8 +102,11 @@ def test_managed_context_rebinds_owner_through_scoped_manager_socket(
         _stop(bootstrap, config)
 
 
+@pytest.mark.parametrize("fail_after_create", [False, True])
 def test_failed_manager_socket_creation_rolls_back_owned_objects(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_after_create: bool,
 ) -> None:
     instance = _instance(tmp_path)
     config = _config()
@@ -112,9 +115,12 @@ def test_failed_manager_socket_creation_rolls_back_owned_objects(
     original_socket_create = ContextApi.socket_create
 
     def fail_manager_socket(self: ContextApi, **kwargs: object) -> dict[str, object]:
+        if kwargs.get("socket_id") == "broken01" and not fail_after_create:
+            raise RuntimeError("injected manager socket failure")
+        result = original_socket_create(self, **kwargs)
         if kwargs.get("socket_id") == "broken01":
             raise RuntimeError("injected manager socket failure")
-        return original_socket_create(self, **kwargs)
+        return result
 
     monkeypatch.setattr(ContextApi, "socket_create", fail_manager_socket)
     try:
@@ -126,12 +132,29 @@ def test_failed_manager_socket_creation_rolls_back_owned_objects(
             "ROBA_RUNTIME_ROOT": str(config["runtime_root"]),
             "ROBA_LOGS_ROOT": str(config["logs_root"]),
         }
-        control = RobaClient(env=environment, timeout=5).context(
+        registry_owner = RobaClient(env=environment, timeout=5).context(
             locator=f"id:dix.control",
             control=str(credentials["control_locator"]),
             token=str(credentials["owner_token"]),
         )
         with pytest.raises(TransportError, match="instance not found"):
-            control.instance_snapshot(instance_id="broken01")
+            registry_owner.instance_snapshot(instance_id="broken01")
+        with pytest.raises(TransportError, match="socket not found"):
+            registry_owner.socket_info(socket_id="broken01")
+
+        control = RobaClient(env=environment, timeout=5).control(
+            locator=str(credentials["control_locator"]),
+            token=str(credentials["control_token"]),
+        )
+        with pytest.raises(TransportError, match="context not found"):
+            control.context_info(context_id="broken01")
+
+        manager_path = principal_socket(
+            "registry-test",
+            "dix.control",
+            "broken01",
+            environment,
+        )
+        assert not manager_path.exists()
     finally:
         _stop(bootstrap, config)

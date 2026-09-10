@@ -8,7 +8,7 @@ import pytest
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 from dix.modules import first_party_module_path
-from roba import ContextApi, RobaClient, stop_daemon
+from roba import ContextApi, ControlApi, RobaClient, stop_daemon
 
 
 CONTROL_STATE = {
@@ -108,13 +108,23 @@ def test_bootstrap_stops_its_new_daemon_when_control_creation_fails(
 
     original_socket_create = ContextApi.socket_create
 
+    deleted_contexts: list[str] = []
+    original_context_delete = ControlApi.context_delete
+
     def fail_root_socket(self: ContextApi, **kwargs: object) -> dict[str, object]:
+        result = original_socket_create(self, **kwargs)
         if kwargs.get("socket_id") == "admin":
             raise RuntimeError("injected root socket failure")
-        return original_socket_create(self, **kwargs)
+        return result
+
+    def record_context_delete(self: ControlApi, *, context_id: str) -> dict[str, object]:
+        deleted_contexts.append(context_id)
+        return original_context_delete(self, context_id=context_id)
 
     monkeypatch.setattr(ContextApi, "socket_create", fail_root_socket)
+    monkeypatch.setattr(ControlApi, "context_delete", record_context_delete)
     with pytest.raises(RuntimeError, match="injected root socket failure"):
         instance.api.require("bootstrap")()
 
+    assert deleted_contexts == ["dix.control"]
     assert not (Path(str(config["runtime_root"])) / "daemons" / "control-test").exists()
