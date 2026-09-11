@@ -1,0 +1,14 @@
+[composition]
+id = "state"
+
+[compositions.models]
+use = "dix/state/models"
+
+[compositions.control]
+use = "dix/roba/control"
+
+[functions.get]
+description = "Read and validate the modeled state of an existing ROBA context."
+
+[functions.set]
+description = "Validate and write modeled fields to an existing ROBA context."
