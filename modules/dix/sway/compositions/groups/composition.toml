@@ -1,0 +1,24 @@
+[composition]
+id = "groups"
+
+[compositions.state]
+use = "dix/roba/state"
+config = { model = "models/sway_groups.toml", context_id = "sway" }
+
+[compositions.ipc]
+use = "dix/sway/ipc"
+
+[functions.create]
+description = "Create one empty named Sway container group."
+
+[functions.add]
+description = "Add the currently focused Sway container to a group."
+
+[functions.remove]
+description = "Remove the currently focused Sway container from a group."
+
+[functions.show]
+description = "Show the members of one Sway container group."
+
+[functions.list]
+description = "List all manually managed Sway container groups."

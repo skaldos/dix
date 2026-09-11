@@ -1,0 +1,5 @@
+name = "SwayGroupsState"
+
+[fields.groups]
+type = "object"
+default = {}

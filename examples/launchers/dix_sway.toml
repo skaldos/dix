@@ -1,0 +1,21 @@
+[launcher]
+name = "dix-sway"
+adapter = "python_cli"
+application = "dix/sway/cli"
+function = "main"
+
+[[modules]]
+id = "dix/state"
+source = "../../modules/dix/state"
+
+[[modules]]
+id = "dix/cli"
+source = "../../modules/dix/cli"
+
+[[modules]]
+id = "dix/roba"
+source = "../../modules/dix/roba"
+
+[[modules]]
+id = "dix/sway"
+source = "../../modules/dix/sway"

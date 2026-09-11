@@ -1,0 +1,11 @@
+[app]
+id = "cli"
+
+[compositions.typer]
+use = "dix/cli/typer"
+
+[apps.groups]
+use = "dix/sway/groups"
+
+[functions.main]
+description = "Run the explicit DIX Sway groups CLI."
