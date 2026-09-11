@@ -11,6 +11,7 @@ from dix.modules import first_party_module_path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_sway.toml"
+VERIFY = REPOSITORY / "examples" / "launchers" / "verify_dix_sway_wheel.py"
 
 
 def test_sway_module_is_resolvable_and_launcher_spec_builds(tmp_path: Path) -> None:
@@ -46,3 +47,15 @@ def test_sway_wheel_contains_module_and_optional_dependency_only(tmp_path: Path)
     requirements = metadata.get_all("Requires-Dist", [])
     assert any(item.startswith("i3ipc==2.2.1") and "extra == 'sway'" in item for item in requirements)
     assert all("; extra ==" in item for item in requirements)
+
+
+def test_installed_wheel_builds_and_executes_sway_launcher(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        ["uv", "run", "--extra", "sway", "python", str(VERIFY), str(tmp_path / "verify")],
+        cwd=REPOSITORY,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "wheel-sway-launcher=ok" in completed.stdout
