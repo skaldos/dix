@@ -1,0 +1,5 @@
+[composition]
+id = "ipc"
+
+[functions.focused_con_id]
+description = "Return the integer ID of the currently focused Sway container."
