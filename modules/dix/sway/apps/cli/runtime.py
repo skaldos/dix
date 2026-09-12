@@ -11,7 +11,7 @@ class TyperApi(Protocol):
 
 
 class Runtime:
-    """Project the Sway groups application through the shared Typer adapter."""
+    """Project the Sway runtime and groups applications through Typer."""
 
     def __init__(
         self,
@@ -20,17 +20,19 @@ class Runtime:
         config: Mapping[str, object],
         typer: TyperApi,
         groups: ApplicationApi,
+        runtime: ApplicationApi,
     ) -> None:
         self.context = context
         self.config = config
         self.typer = typer
         self.groups = groups
+        self.runtime = runtime
 
     def main(self, argv: Sequence[str]) -> int:
-        """Run the explicit DIX Sway groups CLI."""
+        """Run the explicit DIX Sway runtime and groups CLI."""
         result = self.typer.require("invoke")(
             name="dix-sway",
-            targets={"group": self.groups},
+            targets={"group": self.groups, "runtime": self.runtime},
             argv=argv,
         )
         if type(result) is not int:
