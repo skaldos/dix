@@ -18,7 +18,8 @@ def main() -> int:
     registry = create_core_component_registry()
     modules = registry.require("module", ModuleComponent)
     compositions = registry.require("composition", CompositionComponent)
-    modules.load_module(first_party_module_path("dix/sway"), module_id="dix/sway")
+    for module_id in ("dix/state", "dix/cli", "dix/roba", "dix/sway"):
+        modules.load_module(first_party_module_path(module_id), module_id=module_id)
     instance = compositions.create_instance(
         CompositionInstanceSpec("ipc", "dix/sway/ipc", {}, Path.cwd()),
         owner_scope_id="probe",

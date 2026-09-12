@@ -154,58 +154,6 @@ source = {sway!r}
 
     home = Path(tempfile.mkdtemp(prefix="dix-sway-wheel-", dir="/tmp"))
     runtime_root = home / ".roba" / "runtime"
-    logs_root = home / ".roba" / "logs"
-    process_env = {
-        **os.environ,
-        "HOME": str(home),
-        "ROBA_RUNTIME_ROOT": str(runtime_root),
-        "ROBA_LOGS_ROOT": str(logs_root),
-    }
-    setup = output / "setup.py"
-    setup.write_text(
-        textwrap.dedent(
-            f'''\
-            from pathlib import Path
-
-            from roba import start_daemon
-            from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
-            from dix.core.application import ApplicationInstanceSpec
-            from dix.modules import first_party_module_path
-
-            environment = {{
-                "ROBA_RUNTIME_ROOT": {str(runtime_root)!r},
-                "ROBA_LOGS_ROOT": {str(logs_root)!r},
-            }}
-            creation = start_daemon("default", env=environment)
-            registry = create_core_component_registry()
-            modules = registry.require("module", ModuleComponent)
-            applications = registry.require("application", ApplicationComponent)
-            for module_id in ("dix/state", "dix/cli", "dix/roba"):
-                modules.load_module(first_party_module_path(module_id), module_id=module_id)
-            control = applications.create_instance(
-                ApplicationInstanceSpec("control", "dix/roba/control", {{}}, Path.cwd()),
-                owner_scope_id="wheel-setup",
-            )
-            control.api.require("bootstrap")(
-                control_locator=str(creation.control_locator),
-                control_token=creation.control_token,
-                daemon_id="default",
-                runtime_root={str(runtime_root)!r},
-                logs_root={str(logs_root)!r},
-                timeout=5.0,
-            )
-            control.api.require("create_context")(
-                context_id="sway",
-                daemon_id="default",
-                runtime_root={str(runtime_root)!r},
-                logs_root={str(logs_root)!r},
-                timeout=5.0,
-            )
-            print("wheel-sway-runtime=ready")
-            '''
-        ),
-        encoding="utf-8",
-    )
     fake = output / "fake"
     fake.mkdir()
     (fake / "i3ipc.py").write_text(
@@ -222,75 +170,81 @@ source = {sway!r}
         ),
         encoding="utf-8",
     )
-    launcher_env = {
-        **process_env,
+    process_env = {
+        **os.environ,
+        "HOME": str(home),
         "PYTHONPATH": str(fake),
+        "SWAYSOCK": "test-sway-socket",
         "DIX_TEST_FOCUS": "731",
     }
+    runtime_running = False
+    def run_launcher(*arguments: str) -> subprocess.CompletedProcess[str]:
+        completed = _run(
+            str(python),
+            str(launcher),
+            *arguments,
+            cwd=output,
+            env=process_env,
+        )
+        combined = f"{completed.stdout}\n{completed.stderr}"
+        if "control_token" in combined or "owner_token" in combined:
+            raise RuntimeError("installed Sway launcher exposed a ROBA credential")
+        return completed
 
-    primary_error: BaseException | None = None
+    def require_success(*arguments: str) -> subprocess.CompletedProcess[str]:
+        completed = run_launcher(*arguments)
+        if completed.returncode:
+            raise RuntimeError(
+                f"launcher failed ({completed.returncode}): {' '.join(arguments)}\n"
+                f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+            )
+        return completed
+
+    def require_failure(*arguments: str) -> subprocess.CompletedProcess[str]:
+        completed = run_launcher(*arguments)
+        if completed.returncode == 0:
+            raise RuntimeError(f"launcher unexpectedly succeeded: {' '.join(arguments)}")
+        return completed
+
     try:
-        setup_result = _require(_run(str(python), str(setup), cwd=output, env=process_env))
-        if "wheel-sway-runtime=ready" not in setup_result.stdout:
-            raise RuntimeError("wheel Sway setup did not report readiness")
-        _require(
-            _run(
-                str(python),
-                str(launcher),
-                "group",
-                "create",
-                "--group",
-                "work",
-                cwd=output,
-                env=launcher_env,
-            )
-        )
-        _require(
-            _run(
-                str(python),
-                str(launcher),
-                "group",
-                "add",
-                "--group",
-                "work",
-                cwd=output,
-                env=launcher_env,
-            )
-        )
-        listed = _require(
-            _run(
-                str(python),
-                str(launcher),
-                "group",
-                "list",
-                cwd=output,
-                env=launcher_env,
-            )
-        )
+        require_failure("runtime", "status")
+        require_failure("group", "list")
+        if runtime_root.exists():
+            raise RuntimeError("pre-start inspection created a ROBA runtime root")
+
+        started = require_success("runtime", "start")
+        runtime_running = True
+        if "context_id" not in started.stdout or "sway" not in started.stdout:
+            raise RuntimeError(f"runtime start omitted Sway status: {started.stdout!r}")
+        require_failure("runtime", "start")
+        status = require_success("runtime", "status")
+        if "context_ready" not in status.stdout:
+            raise RuntimeError(f"runtime status omitted context readiness: {status.stdout!r}")
+
+        require_success("group", "create", "--group", "work")
+        require_success("group", "add", "--group", "work")
+        listed = require_success("group", "list")
         if listed.stdout.strip() != "{'work': [731]}":
             raise RuntimeError(f"unexpected launcher output: {listed.stdout!r}")
-    except BaseException as exc:
-        primary_error = exc
-        raise
+
+        require_success("runtime", "stop")
+        runtime_running = False
+        require_failure("runtime", "status")
+        require_failure("group", "list")
+
+        restarted = require_success("runtime", "start")
+        runtime_running = True
+        if "context_id" not in restarted.stdout or "sway" not in restarted.stdout:
+            raise RuntimeError(f"runtime restart omitted Sway status: {restarted.stdout!r}")
+        empty = require_success("group", "list")
+        if empty.stdout.strip() != "{}":
+            raise RuntimeError(f"restart restored stale group state: {empty.stdout!r}")
+        require_success("runtime", "stop")
+        runtime_running = False
     finally:
-        try:
-            stopped = _run(
-                str(python),
-                "-c",
-                (
-                    "from roba import stop_daemon; "
-                    "stop_daemon(daemon='id:default', env={"
-                    f"'ROBA_RUNTIME_ROOT': {str(runtime_root)!r}, "
-                    f"'ROBA_LOGS_ROOT': {str(logs_root)!r}"
-                    "})"
-                ),
-                cwd=output,
-                env=process_env,
-            )
-            if stopped.returncode and primary_error is None:
-                _require(stopped)
-        finally:
-            shutil.rmtree(home, ignore_errors=True)
+        if runtime_running:
+            run_launcher("runtime", "stop")
+        shutil.rmtree(home, ignore_errors=True)
 
     print("wheel-sway-launcher=ok")
     print(f"dix-wheel={dix_wheel.name}")

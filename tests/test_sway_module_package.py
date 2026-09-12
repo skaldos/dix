@@ -41,6 +41,8 @@ def test_sway_wheel_contains_module_and_optional_dependency_only(tmp_path: Path)
         "dix/_modules/dix/sway/compositions/ipc/runtime.py",
         "dix/_modules/dix/sway/compositions/groups/composition.toml",
         "dix/_modules/dix/sway/apps/groups/app.toml",
+        "dix/_modules/dix/sway/apps/runtime/app.toml",
+        "dix/_modules/dix/sway/apps/runtime/runtime.py",
         "dix/_modules/dix/sway/apps/cli/app.toml",
     } <= names
     assert "sway" in metadata.get_all("Provides-Extra", [])
