@@ -1,0 +1,23 @@
+[app]
+id = "navigation_group"
+
+[apps.basic]
+use = "dix/sway/navigation_basic"
+
+[apps.groups]
+use = "dix/sway/groups"
+
+[compositions.ipc]
+use = "dix/sway/ipc"
+
+[functions.left]
+description = "Move left to the next live member of the active Sway group."
+
+[functions.right]
+description = "Move right to the next live member of the active Sway group."
+
+[functions.up]
+description = "Move up to the next live member of the active Sway group."
+
+[functions.down]
+description = "Move down to the next live member of the active Sway group."

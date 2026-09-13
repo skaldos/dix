@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -19,19 +20,21 @@ class _Api:
 
 class _State:
     def __init__(self, value: dict[str, object] | None = None) -> None:
-        self.value = value or {"groups": {}}
+        self.value = value or {"groups": {}, "active_group": ""}
         self.writes: list[dict[str, object]] = []
 
     def api(self) -> _Api:
         return _Api({"get": self.get, "set": self.set})
 
     def get(self) -> dict[str, object]:
-        return {"groups": {name: list(members) for name, members in self.value["groups"].items()}}
+        return deepcopy(self.value)
 
     def set(self, value: dict[str, object]) -> bool:
-        self.writes.append(value)
-        self.value = value
-        return True
+        candidate = deepcopy(value)
+        changed = candidate != self.value
+        self.writes.append(candidate)
+        self.value = candidate
+        return changed
 
 
 class _Ipc:
@@ -75,6 +78,7 @@ def test_create_add_remove_show_and_list_use_only_explicit_operations() -> None:
     assert runtime.list() == {"work": []}
     assert ipc.focused == 42
     assert len(state.writes) == 3
+    assert state.value == {"groups": {"work": []}, "active_group": ""}
 
 
 def test_group_names_and_unknown_groups_are_explicit_errors() -> None:
@@ -93,9 +97,11 @@ def test_group_names_and_unknown_groups_are_explicit_errors() -> None:
 
 def test_state_validation_rejects_invalid_inner_groups_and_bool_ids() -> None:
     for value in (
-        {"groups": {"work": "not-a-list"}},
-        {"groups": {"work": [True]}},
-        {"groups": {"work": [1, 1]}},
+        {"groups": {"work": "not-a-list"}, "active_group": ""},
+        {"groups": {"work": [True]}, "active_group": ""},
+        {"groups": {"work": [1, 1]}, "active_group": ""},
+        {"groups": {}, "active_group": 1},
+        {"groups": {}, "active_group": "missing"},
     ):
         runtime, _, _ = _runtime(_State(value))
         with pytest.raises((TypeError, ValueError)):
@@ -112,7 +118,10 @@ def test_same_container_can_belong_to_multiple_groups_and_results_are_detached()
     result = runtime.list()
     result["one"].append(99)
     assert runtime.list() == {"one": [42], "two": [42]}
-    assert state.value == {"groups": {"one": [42], "two": [42]}}
+    assert state.value == {
+        "groups": {"one": [42], "two": [42]},
+        "active_group": "",
+    }
 
 
 def test_add_and_remove_read_focus_only_when_group_exists() -> None:
@@ -120,3 +129,27 @@ def test_add_and_remove_read_focus_only_when_group_exists() -> None:
     with pytest.raises(ValueError):
         runtime.add("missing")
     assert ipc.focused == 42
+
+
+def test_select_and_current_require_an_existing_group_and_preserve_groups() -> None:
+    runtime, state, _ = _runtime()
+    assert runtime.current() == ""
+    with pytest.raises(ValueError, match="unknown"):
+        runtime.select("missing")
+
+    runtime.create("work")
+    assert runtime.select("work") is True
+    assert runtime.select("work") is False
+    assert runtime.current() == "work"
+    assert state.value == {"groups": {"work": []}, "active_group": "work"}
+
+
+def test_group_mutations_preserve_the_active_group() -> None:
+    runtime, state, _ = _runtime(
+        _State({"groups": {"work": [], "other": []}, "active_group": "work"})
+    )
+    runtime.add("other")
+    runtime.remove("other")
+    runtime.create("third")
+    assert runtime.current() == "work"
+    assert state.value["active_group"] == "work"

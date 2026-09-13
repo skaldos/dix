@@ -22,3 +22,9 @@ description = "Show the members of one Sway container group."
 
 [functions.list]
 description = "List all manually managed Sway container groups."
+
+[functions.select]
+description = "Select one existing Sway container group for navigation."
+
+[functions.current]
+description = "Return the currently selected Sway container group."

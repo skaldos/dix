@@ -15,7 +15,15 @@ class _Groups:
     def require(self, function_id: str):
         def call(*args: object) -> object:
             self.calls.append((function_id, args))
-            return {"create": None, "add": True, "remove": False, "show": [4], "list": {"work": [4]}}[
+            return {
+                "create": None,
+                "add": True,
+                "remove": False,
+                "show": [4],
+                "list": {"work": [4]},
+                "select": True,
+                "current": "work",
+            }[
                 function_id
             ]
 
@@ -43,12 +51,16 @@ def test_application_exposes_group_composition_without_new_business_logic() -> N
     assert runtime.remove("work") is False
     assert runtime.show("work") == [4]
     assert runtime.list() == {"work": [4]}
+    assert runtime.select("work") is True
+    assert runtime.current() == "work"
     assert groups.calls == [
         ("create", ("work",)),
         ("add", ("work",)),
         ("remove", ("work",)),
         ("show", ("work",)),
         ("list", ()),
+        ("select", ("work",)),
+        ("current", ()),
     ]
 
 
@@ -71,12 +83,21 @@ def _application_api() -> ApplicationApi:
     def list_groups() -> dict[str, list[int]]:
         return {"work": [4]}
 
+    def select(*, group: str) -> bool:
+        del group
+        return True
+
+    def current() -> str:
+        return "work"
+
     functions = {
         "create": create,
         "add": add,
         "remove": remove,
         "show": show,
         "list": list_groups,
+        "select": select,
+        "current": current,
     }
     descriptors = {
         name: ApplicationFunctionDescriptor(
@@ -93,11 +114,13 @@ def _application_api() -> ApplicationApi:
     return ApplicationApi(functions, descriptors)
 
 
-def test_application_api_keeps_exact_five_named_functions() -> None:
+def test_application_api_keeps_exact_seven_named_functions() -> None:
     assert {descriptor.id for descriptor in _application_api().functions()} == {
         "create",
         "add",
         "remove",
         "show",
         "list",
+        "select",
+        "current",
     }

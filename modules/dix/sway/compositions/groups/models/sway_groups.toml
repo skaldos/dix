@@ -3,3 +3,7 @@ name = "SwayGroupsState"
 [fields.groups]
 type = "object"
 default = {}
+
+[fields.active_group]
+type = "string"
+default = ""

@@ -38,3 +38,9 @@ class Runtime:
 
     def list(self) -> dict[str, list[int]]:
         return self.groups.require("list")()
+
+    def select(self, group: str) -> bool:
+        return self.groups.require("select")(group)
+
+    def current(self) -> str:
+        return self.groups.require("current")()

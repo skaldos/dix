@@ -23,3 +23,11 @@ export = "groups.show"
 [functions.list]
 description = "List all manually managed Sway container groups."
 export = "groups.list"
+
+[functions.select]
+description = "Select one existing Sway container group for navigation."
+export = "groups.select"
+
+[functions.current]
+description = "Return the currently selected Sway container group."
+export = "groups.current"
