@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ast
 import os
 import shutil
 import subprocess
@@ -10,7 +11,7 @@ import textwrap
 from pathlib import Path
 
 
-EXPECTED_ROBA_COMMIT = "bdca5fbb4ba853657277dc87eeb28b6522e4270a"
+EXPECTED_ROBA_COMMIT = "afde02db17e5a85cb4e8bfebf31ecc6bac61c2a2"
 REPOSITORY = Path(__file__).resolve().parents[2]
 ROBA_REPOSITORY = Path(os.environ.get("DIX_ROBA_SOURCE", REPOSITORY.parent / "roba")).resolve()
 
@@ -159,13 +160,37 @@ source = {sway!r}
     (fake / "i3ipc.py").write_text(
         textwrap.dedent(
             '''\
+            import json
             import os
+            import re
             from types import SimpleNamespace
+
+            _current = int(os.environ.get("DIX_TEST_INITIAL_FOCUS", "731"))
+            _live = [
+                int(value)
+                for value in os.environ.get("DIX_TEST_LIVE_IDS", str(_current)).split(",")
+                if value
+            ]
+            _transitions = json.loads(os.environ.get("DIX_TEST_TRANSITIONS", "{}"))
 
             class Connection:
                 def get_tree(self):
-                    focused = int(os.environ["DIX_TEST_FOCUS"])
-                    return SimpleNamespace(find_focused=lambda: SimpleNamespace(id=focused))
+                    return SimpleNamespace(
+                        find_focused=lambda: SimpleNamespace(id=_current),
+                        leaves=lambda: [SimpleNamespace(id=value) for value in _live],
+                    )
+
+                def command(self, command):
+                    global _current
+                    if command.startswith("focus "):
+                        direction = command.split(" ", 1)[1]
+                        _current = int(_transitions.get(f"{_current}:{direction}", _current))
+                    else:
+                        match = re.fullmatch(r"\\[con_id=(-?\\d+)\\] focus", command)
+                        if match is None:
+                            return [SimpleNamespace(success=False, error="bad command")]
+                        _current = int(match.group(1))
+                    return [SimpleNamespace(success=True, error=None)]
             '''
         ),
         encoding="utf-8",
@@ -175,7 +200,7 @@ source = {sway!r}
         "HOME": str(home),
         "PYTHONPATH": str(fake),
         "SWAYSOCK": "test-sway-socket",
-        "DIX_TEST_FOCUS": "731",
+        "DIX_TEST_INITIAL_FOCUS": "731",
     }
     runtime_running = False
     def run_launcher(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -222,10 +247,65 @@ source = {sway!r}
             raise RuntimeError(f"runtime status omitted context readiness: {status.stdout!r}")
 
         require_success("group", "create", "--group", "work")
-        require_success("group", "add", "--group", "work")
+        for con_id in (1, 3, 99):
+            process_env["DIX_TEST_INITIAL_FOCUS"] = str(con_id)
+            require_success("group", "add", "--group", "work")
         listed = require_success("group", "list")
-        if listed.stdout.strip() != "{'work': [731]}":
+        if listed.stdout.strip() != "{'work': [1, 3, 99]}":
             raise RuntimeError(f"unexpected launcher output: {listed.stdout!r}")
+
+        current = require_success("navigation", "current")
+        if current.stdout.strip() != "basic":
+            raise RuntimeError(f"unexpected default navigation: {current.stdout!r}")
+
+        process_env.update(
+            DIX_TEST_INITIAL_FOCUS="10",
+            DIX_TEST_LIVE_IDS="10,20",
+            DIX_TEST_TRANSITIONS=json.dumps({"10:right": 20}),
+        )
+        basic = ast.literal_eval(require_success("navigation", "right").stdout.strip())
+        if basic != {
+            "direction": "right",
+            "origin_id": 10,
+            "focused_id": 20,
+            "changed": True,
+        }:
+            raise RuntimeError(f"unexpected basic navigation: {basic!r}")
+
+        process_env["DIX_SWAY_GROUP_SELECT_GROUP"] = "work"
+        require_success("group", "select")
+        process_env["DIX_SWAY_NAVIGATION_SELECT_NODE_SELECTOR"] = "group"
+        require_success("navigation", "select")
+        process_env.pop("DIX_SWAY_GROUP_SELECT_GROUP")
+        process_env.pop("DIX_SWAY_NAVIGATION_SELECT_NODE_SELECTOR")
+
+        process_env.update(
+            DIX_TEST_INITIAL_FOCUS="1",
+            DIX_TEST_LIVE_IDS="1,2,3",
+            DIX_TEST_TRANSITIONS=json.dumps({"1:right": 2, "2:right": 3}),
+        )
+        grouped = ast.literal_eval(require_success("navigation", "right").stdout.strip())
+        if not grouped["matched"] or grouped["visited_ids"] != [1, 2, 3]:
+            raise RuntimeError(f"unexpected group navigation: {grouped!r}")
+        if grouped["stale_ids"] != [99]:
+            raise RuntimeError(f"stale ID was not exposed: {grouped!r}")
+        shown = ast.literal_eval(require_success("group", "show", "--group", "work").stdout.strip())
+        if shown != [1, 3, 99]:
+            raise RuntimeError(f"navigation mutated group state: {shown!r}")
+
+        process_env.update(
+            DIX_TEST_INITIAL_FOCUS="1",
+            DIX_TEST_TRANSITIONS=json.dumps({"1:left": 2, "2:left": 2}),
+        )
+        restored = ast.literal_eval(require_success("navigation", "left").stdout.strip())
+        if restored["matched"] or not restored["restored"] or restored["focused_id"] != 1:
+            raise RuntimeError(f"unexpected no-target restore: {restored!r}")
+
+        rejected = require_failure(
+            "navigation", "select", "--node_selector", "unknown"
+        )
+        if "unknown Sway node selector" not in rejected.stderr:
+            raise RuntimeError(f"unknown selector did not fail visibly: {rejected.stderr!r}")
 
         require_success("runtime", "stop")
         runtime_running = False
@@ -239,6 +319,10 @@ source = {sway!r}
         empty = require_success("group", "list")
         if empty.stdout.strip() != "{}":
             raise RuntimeError(f"restart restored stale group state: {empty.stdout!r}")
+        if require_success("group", "current").stdout.strip():
+            raise RuntimeError("restart restored an active Sway group")
+        if require_success("navigation", "current").stdout.strip() != "basic":
+            raise RuntimeError("restart restored a non-default navigation selector")
         require_success("runtime", "stop")
         runtime_running = False
     finally:

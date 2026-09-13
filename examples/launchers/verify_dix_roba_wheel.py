@@ -8,7 +8,7 @@ import textwrap
 from pathlib import Path
 
 
-EXPECTED_ROBA_COMMIT = "bdca5fbb4ba853657277dc87eeb28b6522e4270a"
+EXPECTED_ROBA_COMMIT = "afde02db17e5a85cb4e8bfebf31ecc6bac61c2a2"
 REPOSITORY = Path(__file__).resolve().parents[2]
 ROBA_REPOSITORY = Path(os.environ.get("DIX_ROBA_SOURCE", REPOSITORY.parent / "roba")).resolve()
 
