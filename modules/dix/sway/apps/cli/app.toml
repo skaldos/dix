@@ -10,5 +10,8 @@ use = "dix/sway/groups"
 [apps.runtime]
 use = "dix/sway/runtime"
 
+[apps.navigation]
+use = "dix/sway/navigation"
+
 [functions.main]
-description = "Run the explicit DIX Sway runtime and groups CLI."
+description = "Run the explicit DIX Sway runtime, groups, and navigation CLI."

@@ -1,0 +1,30 @@
+[app]
+id = "navigation"
+
+[compositions.state]
+use = "dix/roba/state"
+config = { model = "models/sway_navigation.toml", context_id = "sway" }
+
+[apps.basic]
+use = "dix/sway/navigation_basic"
+
+[apps.group]
+use = "dix/sway/navigation_group"
+
+[functions.select]
+description = "Select the basic or group Sway navigation implementation."
+
+[functions.current]
+description = "Return the selected Sway navigation implementation."
+
+[functions.left]
+description = "Move focus left through the selected Sway navigation implementation."
+
+[functions.right]
+description = "Move focus right through the selected Sway navigation implementation."
+
+[functions.up]
+description = "Move focus up through the selected Sway navigation implementation."
+
+[functions.down]
+description = "Move focus down through the selected Sway navigation implementation."
