@@ -1,5 +1,0 @@
-name = "SwayNavigationState"
-
-[fields.node_selector]
-type = "string"
-default = "basic"

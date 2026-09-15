@@ -1,9 +1,0 @@
-name = "SwayGroupsState"
-
-[fields.groups]
-type = "array"
-default = []
-
-[fields.active_group]
-type = "string"
-default = ""
