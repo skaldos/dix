@@ -19,13 +19,13 @@ class Runtime:
         context: ApplicationRuntimeContext,
         config: Mapping[str, object],
         basic: ApplicationApi,
-        groups: ApplicationApi,
+        active_members: IpcApi,
         ipc: IpcApi,
     ) -> None:
         self.context = context
         self.config = config
         self.basic = basic
-        self.groups = groups
+        self.active_members = active_members
         self.ipc = ipc
 
     def left(self) -> dict[str, object]:
@@ -41,13 +41,15 @@ class Runtime:
         return self._move("down")
 
     def _move(self, direction: str) -> dict[str, object]:
-        active_group = self.groups.require("current")()
-        if not isinstance(active_group, str) or not active_group:
-            raise ValueError("no active Sway group selected")
         members = _integer_ids(
-            self.groups.require("show")(active_group),
-            "Sway group members",
+            self.active_members.require("get")(),
+            "active Sway members",
         )
+        if not members:
+            result = self.basic.require(direction)()
+            if not isinstance(result, dict):
+                raise TypeError("basic Sway navigation must return a dictionary")
+            return result
         origin_id = self._focused_con_id()
         live_ids = _integer_ids(self.ipc.require("live_con_ids")(), "live Sway con_ids")
         live = set(live_ids)

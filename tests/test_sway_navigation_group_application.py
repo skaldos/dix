@@ -45,11 +45,10 @@ def _runtime(
     live_ids: object,
     steps: list[tuple[int, int]],
     origin: object = 1,
-    active: object = "work",
     restored_focus: object = 1,
     restore_result: object = None,
 ):
-    groups = _Api({"current": lambda: active, "show": lambda group: members})
+    active_members = _Api({"get": lambda: members})
     focused_values = [origin, restored_focus]
     restore_calls: list[int] = []
 
@@ -79,17 +78,17 @@ def _runtime(
         context=context,
         config={},
         basic=basic,  # type: ignore[arg-type]
-        groups=groups,  # type: ignore[arg-type]
+        active_members=active_members,
         ipc=ipc,
     )
-    return runtime, basic, groups, ipc, restore_calls
+    return runtime, basic, active_members, ipc, restore_calls
 
 
 @pytest.mark.parametrize("direction", ["left", "right", "up", "down"])
 def test_group_navigation_passes_intermediate_focus_and_hits_first_live_member(
     direction: str,
 ) -> None:
-    runtime, basic, groups, ipc, restore_calls = _runtime(
+    runtime, basic, active_members, ipc, restore_calls = _runtime(
         members=[1, 3, 99],
         live_ids=[1, 2, 3],
         steps=[(1, 2), (2, 3)],
@@ -109,7 +108,7 @@ def test_group_navigation_passes_intermediate_focus_and_hits_first_live_member(
         "visited_ids", "stale_ids",
     ]
     assert basic.calls == [direction, direction]
-    assert groups.calls == [("current", ()), ("show", ("work",))]
+    assert active_members.calls == [("get", ())]
     assert ipc.calls == [("focused_con_id", ()), ("live_con_ids", ())]
     assert restore_calls == []
 
@@ -201,14 +200,26 @@ def test_non_none_restore_result_is_rejected() -> None:
         runtime.left()
 
 
-@pytest.mark.parametrize("active", ["", None, 1])
-def test_missing_or_invalid_active_group_is_a_visible_error(active: object) -> None:
-    runtime, basic, _, _, _ = _runtime(
-        active=active, members=[1], live_ids=[1], steps=[]
+@pytest.mark.parametrize("members", [[], []])
+def test_missing_or_empty_projection_delegates_exactly_once_without_ipc(members: list[int]) -> None:
+    runtime, basic, active_members, ipc, restore_calls = _runtime(
+        members=members, live_ids=AssertionError(), steps=[(1, 2)]
     )
-    with pytest.raises(ValueError, match="no active"):
-        runtime.left()
+    result = runtime.left()
+    assert result == {"direction": "left", "origin_id": 1, "focused_id": 2, "changed": True}
+    assert basic.calls == ["left"]
+    assert active_members.calls == [("get", ())]
+    assert ipc.calls == []
+    assert restore_calls == []
+
+
+def test_projection_error_precedes_every_ipc_call() -> None:
+    runtime, basic, active_members, ipc, _ = _runtime(members=[], live_ids=[], steps=[])
+    active_members.functions["get"] = lambda: (_ for _ in ()).throw(ValueError("corrupt projection"))
+    with pytest.raises(ValueError, match="corrupt"):
+        runtime.right()
     assert basic.calls == []
+    assert ipc.calls == []
 
 
 @pytest.mark.parametrize(
@@ -251,11 +262,11 @@ def test_invalid_basic_results_fail_at_the_wrapper_boundary(step: object) -> Non
             del function_id
             return lambda: step
 
-    runtime, _, groups, ipc, _ = _runtime(
+    runtime, _, active_members, ipc, _ = _runtime(
         members=[1, 3], live_ids=[1, 2, 3], steps=[]
     )
     runtime.basic = Basic()  # type: ignore[assignment]
     with pytest.raises((TypeError, ValueError)):
         runtime.left()
-    assert groups.calls
+    assert active_members.calls
     assert ipc.calls

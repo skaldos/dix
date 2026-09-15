@@ -4,8 +4,8 @@ id = "navigation_group"
 [apps.basic]
 use = "dix/sway/navigation_basic"
 
-[apps.groups]
-use = "dix/sway/groups"
+[compositions.active_members]
+use = "dix/sway/active_members"
 
 [compositions.ipc]
 use = "dix/sway/ipc"
