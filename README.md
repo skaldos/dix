@@ -1,74 +1,142 @@
-# dix
+# DIX
 
-Declarative Interface eXecutor.
+**Declarative Interface eXecutor** — explicit, local composition for small Python runtime graphs.
 
-`dix` is currently an architecture-stage Python toolkit for building isolated runtime graphs:
+[Deutsch](README.de.md) · [Documentation](https://dix.skaldos.dev) ·
+[Source](https://github.com/skaldos/dix) · [ROBA](https://github.com/skaldos/roba) ·
+[External modules](https://github.com/skaldos/dix-modules)
 
-```text
-explicit module load
--> composition graph
--> application graph
--> explicitly exposed local functions
--> direct Python calls
-```
+> **Public Alpha:** DIX is usable and tested, but its API and module formats may still change before
+> a stable release. Pin the exact source revision when building on it.
 
-The core does not define a daemon, transport, wire contract, validation policy, user interface, or
-authorization model.
-
-## Current core
-
-- **Element** processes one native Python value through an explicit technical handler chain.
-- **Datamodel** processes mappings against locally registered field schemas and reports results.
-- **Composition** combines components and other compositions in an isolated instance graph.
-- **Application** combines compositions and applications into a callable local boundary.
-- **Module** explicitly inspects, stages, publishes, and unloads composition/application bundles.
-
-Composition and application specifications are authoritative only for graph assembly and function
-exposure. Real runtime methods remain authoritative for their Python signatures. DIX does not
-implicitly validate, normalize, project, or serialize function arguments and results.
-
-Python loaded from a module executes in-process. Atomic registry publication cannot undo import
-side effects and is not a security sandbox.
-
-## Repository maturity boundary
+DIX loads explicitly selected source modules, assembles their compositions and applications, and
+exposes only declared local Python functions:
 
 ```text
-src/dix/core/            current core implementation
-src/dix/bootstrap/       minimal build-time launcher seed
-modules/dix/             stable first-party DIX modules
-examples/modules/        explicit example application modules
-examples/launchers/      launcher specifications and how-to material
-tests/                   stable core regression
-tests/fixtures/modules/  synthetic test modules; never packaged
-unstable/modules/        preserved module experiments
-unstable/tools/          pressure and authoring experiments
-unstable/tests/          historical evidence for replaced surfaces
+explicit module source
+        ↓
+composition graph
+        ↓
+application graph
+        ↓
+explicitly exposed Python functions
 ```
 
-Stable source must never import from `unstable`. The unstable tree is excluded from wheels.
+It is deliberately not a framework that discovers everything, owns every lifecycle, or moves all
+semantics into one central contract. A module keeps its domain logic; DIX supplies a small,
+inspectable assembly boundary.
 
-Stable first-party modules are bundled as package data but remain explicitly resolved and loaded.
-They do not become core providers or start automatically.
+## Why DIX exists
 
-## Module layout
+Small tools often begin as useful isolated functions and then become trapped in one CLI, daemon,
+HTTP service, or application. DIX separates the reusable application graph from those adapters.
+The same explicitly exposed function can therefore be wrapped by a CLI today and by another
+locally owned adapter later without turning transport policy into core behavior.
+
+The important boundary is responsibility:
+
+- **DIX core** owns deterministic graph inspection, construction, exposure, and teardown.
+- **Modules** own behavior, configuration meaning, validation, and side effects.
+- **Applications** own adaptation and policy at their callable boundary.
+- **Launchers and adapters** own process, CLI, transport, or UI concerns.
+
+## Core concepts
+
+| Concept | Responsibility |
+| --- | --- |
+| **Element** | Processes one native Python value through an explicitly registered technical handler chain. |
+| **Datamodel** | Processes mappings against locally registered field schemas and reports structured results. It does not instantiate domain objects for the caller. |
+| **Composition** | Builds a local graph from components and other compositions and exposes only declared functions. |
+| **Application** | Combines compositions and applications into a callable local boundary. An application may wrap, rename, or deliberately withhold dependency functions. |
+| **Module** | A source-owned bundle of composition and application definitions that is explicitly inspected, loaded, and unloaded. |
+
+Composition and application specifications describe **graph assembly and function exposure**. They
+are not wire contracts. Runtime Python methods remain authoritative for argument and result
+signatures; DIX does not silently validate, normalize, serialize, retry, time out, or audit calls.
+
+## Quick start from source
+
+DIX currently targets Python 3.12 or newer. The repository uses
+[`uv`](https://docs.astral.sh/uv/) for its reproducible development environment.
+
+```sh
+git clone https://github.com/skaldos/dix.git
+cd dix
+uv sync --extra dev
+```
+
+The following complete example explicitly loads the bundled source example, creates one
+application graph, calls an exposed function, and tears everything down:
+
+```sh
+uv run python - <<'PY'
+from pathlib import Path
+
+from dix.core import (
+    ApplicationComponent,
+    ModuleComponent,
+    create_core_component_registry,
+)
+from dix.core.application import ApplicationInstanceSpec
+
+registry = create_core_component_registry()
+modules = registry.require("module", ModuleComponent)
+applications = registry.require("application", ApplicationComponent)
+
+modules.load_module(Path("examples/modules/acme/demo"), module_id="acme/demo")
+instance = applications.create_instance(
+    ApplicationInstanceSpec(
+        id="demo",
+        use="acme/demo/child",
+        config={},
+        config_base_dir=Path.cwd(),
+    ),
+    owner_scope_id="readme",
+)
+
+print(instance.api.require("describe")("Skaldos"))
+
+applications.destroy_instance("readme", "demo")
+modules.unload_module("acme/demo")
+PY
+```
+
+Expected output:
 
 ```text
-<module>/
-  compositions/<local-id>/{composition.toml,runtime.py}
-  apps/<local-id>/{app.toml,runtime.py}
+child[formatted<value:Skaldos>]
 ```
 
-A module contains at least one composition or application. There is no `module.toml`, automatic
-startup, trusted-root policy, model registry, or contract registry in the core.
+Nothing in this example was discovered or started implicitly.
 
-### Composition function
+## Module structure
+
+A directly loadable source module has one module root and at least one composition or application:
+
+```text
+acme/example/
+├── compositions/
+│   └── formatter/
+│       ├── composition.toml
+│       └── runtime.py
+└── apps/
+    └── report/
+        ├── app.toml
+        └── runtime.py
+```
+
+The effective IDs are formed from the explicit module ID and the local definition ID, for example
+`acme/example/formatter` and `acme/example/report`. There is no required `module.toml`, global
+module registry, or automatic module loading.
+
+A minimal composition declares only functions that callers may see:
 
 ```toml
 [composition]
-id = "echo"
+id = "formatter"
 
-[functions.echo]
-description = "Echo one local value."
+[functions.format]
+description = "Format one value."
 ```
 
 ```python
@@ -77,73 +145,118 @@ class Runtime:
         self.context = context
         self.config = config
 
-    def echo(self, value):
-        return value
+    def format(self, value: str) -> str:
+        return f"formatted<{value}>"
 ```
 
-Only methods declared under `[functions]` are exposed. The function receives and returns native
-Python values without automatic contract processing.
+Applications use the same explicit pattern and can combine compositions or other applications.
+Dependency functions are not exported automatically: the application must declare or implement
+the boundary it intends to expose.
 
-### Explicit application wrapper
+## Bootstrap launchers
 
-```toml
-[app]
-id = "echo"
+`dix.bootstrap` turns one explicit launcher specification into an ordinary Python script:
 
-[compositions.worker]
-use = "acme/example/echo"
-
-[functions.echo]
-description = "Expose the worker locally."
-export = "worker.echo"
+```sh
+uv run python -m dix.bootstrap build \
+  examples/launchers/my_cli.toml \
+  --output /tmp/my-cli
 ```
 
-Dependency functions are never exported implicitly. The application implements an explicit local
-wrapper, so it owns adaptation and policy.
+The generated script contains fixed module source paths, creates its own registry, loads only the
+listed modules, creates one application, calls one declared entry function, and tears the graph
+down. The current `python_cli` adapter expects that entry function to implement
+`list[str] -> int`; that is an adapter contract, not a universal DIX function contract.
 
-## Seed launcher
+See [`examples/launchers/README.md`](examples/launchers/README.md) for the multi-application CLI
+example.
 
-`python -m dix.bootstrap build` renders a normal Python program for one fixed application function.
-The generated launcher creates its own registry, loads only declared modules, creates one app,
-calls its function, and tears the graph down. Its `python_cli` adapter locally expects a
-`list[str] -> int` entry point; this is not a core-wide contract.
+## First-party modules
 
-```bash
-uv run python -m dix.bootstrap build launcher.toml --output ./launcher.py
-```
+The wheel includes three explicitly loadable modules as package data:
 
-## Optional multi-application CLI
+| Module | Purpose | Extra |
+| --- | --- | --- |
+| `dix/cli` | Projects explicitly supplied application APIs into a Typer command tree. | `cli` |
+| `dix/state` | Builds local Pydantic-backed state models with explicit `get` and `set` boundaries. | `state` |
+| `dix/roba` | Composes DIX applications with the independently owned ROBA ephemeral-state service. | `roba` |
 
-The first-party `dix/cli` module projects explicitly supplied application APIs into one Typer
-command tree. Typer and Click remain optional dependencies:
+Install only the optional dependencies you need:
 
-```bash
+```sh
 uv sync --extra cli
+uv sync --extra state
+uv sync --extra roba
 ```
 
-Resolve the module without discovery or loading:
+Bundling does not imply discovery or startup. Resolve a bundled module explicitly and then load it
+like any other source module:
 
 ```python
 from dix.modules import first_party_module_path
 
-cli_module = first_party_module_path("dix/cli")
+state_source = first_party_module_path("dix/state")
 ```
 
-The complete manually composed example is documented in
-[`examples/launchers/README.md`](examples/launchers/README.md). It combines two independent target
-applications under the exact groups `base` and `test`, then builds the result through the unchanged
-launcher boundary `main(argv) -> int`.
+[ROBA](https://github.com/skaldos/roba) remains an independent project. It is an ephemeral runtime
+state and exchange service, not a persistence or credential store.
 
-## Development verification
+## External source modules
 
-```bash
-uv run --extra cli pytest -q
-uv run --extra cli python -m compileall -q src modules tests examples
-zsh unstable/pressure/bootstrap_seed/run.zsh
-zsh unstable/pressure/bootstrap_seed/verify_wheel.zsh
-git diff --check
+External modules keep their own repository, dependencies, tests, release decisions, and optional
+integration artifacts. DIX only needs an explicit source path and module ID. It does not require a
+package manager or Git submodule relationship.
+
+The [`skaldos/dix-modules`](https://github.com/skaldos/dix-modules) repository demonstrates this
+boundary. Its `skaldos/sway` module is a real Sway/ROBA integration and is intentionally not part
+of the DIX wheel or DIX dependency graph. Clone and integration instructions belong to that source
+repository; DIX does not auto-discover it.
+
+## Public Python API
+
+The public alpha API is intentionally narrow and module-scoped:
+
+- `dix.core` and its declared `__all__`;
+- `dix.core.application` and its declared `__all__`;
+- `dix.core.composition` and its declared `__all__`;
+- `dix.core.module` and its declared `__all__`;
+- `dix.bootstrap` and its declared `__all__`;
+- `dix.modules` and its declared `__all__`;
+- `dix.__version__`.
+
+Other implementation modules, package-data paths, runtime class-loading details, and repository
+layout internals are not public API merely because Python can import or inspect them. DIX adds no
+convenience re-exports at the package root.
+
+## Explicit limits and security boundary
+
+DIX core does **not** provide:
+
+- module auto-discovery or auto-start;
+- a daemon, scheduler, event loop, HTTP server, IPC transport, or UI;
+- authorization, retry, timeout, audit, persistence, or deployment policy;
+- process, filesystem, network, or code isolation;
+- a universal runtime argument or serialization contract.
+
+Module runtime Python is imported and executed **in the current process**. Transactional registry
+publication can prevent a partially loaded graph from becoming visible, but it cannot undo import
+side effects and is not a security sandbox. Only load code you trust, or establish a real process
+or operating-system isolation boundary outside DIX.
+
+## Development
+
+Run the complete repository checks from a source checkout:
+
+```sh
+uv sync --extra dev --extra cli --extra state --extra roba
+uv run --extra dev --extra cli --extra state --extra roba pytest -q
+uv run python -W error -m compileall -f -q src modules tests examples
+uv build --wheel
 ```
 
-The Typer adapter is one higher-layer module, not core behavior. HTTP, generic runners, Norn/strand
-experiments, code generation, remote execution, ROBA, sandboxing, package management, and lifecycle
-policy likewise remain higher-layer work.
+Stable source never imports from `unstable/`, and `unstable/` is excluded from wheels. Synthetic
+fixtures under `tests/fixtures/` are test inputs, not shipped modules.
+
+## License
+
+Apache License 2.0. See [`LICENSE`](LICENSE).
