@@ -8,6 +8,9 @@ config = { model = "models/sway_groups.toml", context_id = "sway" }
 [compositions.ipc]
 use = "dix/sway/ipc"
 
+[compositions.active_members]
+use = "dix/sway/active_members"
+
 [functions.create]
 description = "Create one empty named Sway container group."
 

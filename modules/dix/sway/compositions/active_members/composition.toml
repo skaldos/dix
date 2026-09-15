@@ -1,0 +1,8 @@
+[composition]
+id = "active_members"
+
+[functions.get]
+description = "Read the canonical active Sway group member projection."
+
+[functions.set]
+description = "Atomically publish the canonical active Sway group member projection."

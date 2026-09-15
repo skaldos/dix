@@ -43,7 +43,16 @@ class _Ipc:
         self.focused = focused
 
     def api(self) -> _Api:
-        return _Api({"focused_con_id": lambda: self.focused})
+        return _Api({"focused_con_id": lambda: self.focused, "live_con_ids": lambda: [self.focused]})
+
+
+class _Active:
+    def __init__(self) -> None:
+        self.writes: list[list[int]] = []
+    def api(self) -> _Api:
+        return _Api({"set": self.set})
+    def set(self, value: list[int]) -> None:
+        self.writes.append(list(value))
 
 
 def _runtime(tmp_path: Path, state: _State | None = None, ipc: _Ipc | None = None):
@@ -55,11 +64,12 @@ def _runtime(tmp_path: Path, state: _State | None = None, ipc: _Ipc | None = Non
         owner_scope_id="test",
     )
     path = tmp_path / "groups.json"
-    return runtime_module.Runtime(context=context, config={"state_file": str(path)}, state=state.api(), ipc=ipc.api()), state, ipc, path
+    active = _Active()
+    return runtime_module.Runtime(context=context, config={"state_file": str(path)}, state=state.api(), ipc=ipc.api(), active_members=active.api()), state, ipc, path, active
 
 
 def test_create_add_remove_show_and_list_use_private_state(tmp_path: Path) -> None:
-    runtime, state, ipc, path = _runtime(tmp_path)
+    runtime, state, ipc, path, active = _runtime(tmp_path)
     assert runtime.create("work") is None
     assert runtime.add("work") is True
     assert runtime.add("work") is False
@@ -72,10 +82,11 @@ def test_create_add_remove_show_and_list_use_private_state(tmp_path: Path) -> No
     assert state.writes == [{"groups": ["work"], "active_group": ""}]
     assert json.loads(path.read_text()) == {"groups": {"work": []}, "active_group": ""}
     assert path.read_bytes().endswith(b"\n")
+    assert active.writes == []
 
 
 def test_missing_is_empty_but_existing_invalid_files_fail(tmp_path: Path) -> None:
-    runtime, _, _, path = _runtime(tmp_path)
+    runtime, _, _, path, _ = _runtime(tmp_path)
     assert runtime.list() == {}
     for raw in (b"", b"{", b"{}\n", b'{"groups":{},"active_group":"missing"}\n'):
         path.write_bytes(raw)
@@ -84,7 +95,7 @@ def test_missing_is_empty_but_existing_invalid_files_fail(tmp_path: Path) -> Non
 
 
 def test_private_validation_rejects_invalid_members(tmp_path: Path) -> None:
-    runtime, _, _, path = _runtime(tmp_path)
+    runtime, _, _, path, _ = _runtime(tmp_path)
     for value in (
         {"groups": {"work": "not-a-list"}, "active_group": ""},
         {"groups": {"work": [True]}, "active_group": ""},
@@ -98,7 +109,7 @@ def test_private_validation_rejects_invalid_members(tmp_path: Path) -> None:
 
 
 def test_names_unknown_groups_and_detached_results(tmp_path: Path) -> None:
-    runtime, _, _, _ = _runtime(tmp_path)
+    runtime, _, _, _, _ = _runtime(tmp_path)
     with pytest.raises(ValueError, match="non-empty"):
         runtime.create(" ")
     runtime.create(" one ")
@@ -115,7 +126,7 @@ def test_names_unknown_groups_and_detached_results(tmp_path: Path) -> None:
 
 
 def test_roba_call_matrix_and_selection(tmp_path: Path) -> None:
-    runtime, state, _, _ = _runtime(tmp_path)
+    runtime, state, _, _, active = _runtime(tmp_path)
     assert runtime.current() == ""
     runtime.create("work")
     assert runtime.select("work") is True
@@ -129,17 +140,18 @@ def test_roba_call_matrix_and_selection(tmp_path: Path) -> None:
         {"groups": ["work"], "active_group": ""},
         {"groups": ["work"], "active_group": "work"},
     ]
+    assert active.writes == [[], [], [42], []]
 
 
 def test_private_write_precedes_visible_roba_failure(tmp_path: Path) -> None:
-    runtime, _, _, path = _runtime(tmp_path, _State(error=RuntimeError("coordination failed")))
+    runtime, _, _, path, _ = _runtime(tmp_path, _State(error=RuntimeError("coordination failed")))
     with pytest.raises(RuntimeError, match="coordination failed"):
         runtime.create("work")
     assert json.loads(path.read_text()) == {"groups": {"work": []}, "active_group": ""}
 
 
 def test_writer_uses_same_directory_atomic_replace(tmp_path: Path, monkeypatch) -> None:
-    runtime, _, _, path = _runtime(tmp_path)
+    runtime, _, _, path, _ = _runtime(tmp_path)
     calls: list[tuple[Path, Path]] = []
     original = os.replace
     def replace(source, target):
@@ -158,4 +170,4 @@ def test_explicit_path_is_required(tmp_path: Path, monkeypatch) -> None:
         owner_scope_id="test",
     )
     with pytest.raises(ValueError, match="path must be set"):
-        runtime_module.Runtime(context=context, config={}, state=_State().api(), ipc=_Ipc().api())
+        runtime_module.Runtime(context=context, config={}, state=_State().api(), ipc=_Ipc().api(), active_members=_Active().api())

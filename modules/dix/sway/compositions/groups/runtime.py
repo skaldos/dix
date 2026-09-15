@@ -15,18 +15,19 @@ class StateApi(Protocol):
     def require(self, function_id: str) -> Callable[..., object]: ...
 
 
-class IpcApi(Protocol):
+class DependencyApi(Protocol):
     def require(self, function_id: str) -> Callable[..., object]: ...
 
 
 class Runtime:
     """Own Sway group membership privately and publish only coordination."""
 
-    def __init__(self, *, context: CompositionRuntimeContext, config: Mapping[str, object], state: StateApi, ipc: IpcApi) -> None:
+    def __init__(self, *, context: CompositionRuntimeContext, config: Mapping[str, object], state: StateApi, ipc: DependencyApi, active_members: DependencyApi) -> None:
         self.context = context
         self.config = config
         self.state = state
         self.ipc = ipc
+        self.active_members = active_members
         configured = config.get("state_file")
         if configured is None:
             configured = os.environ.get("DIX_SWAY_GROUP_STATE_FILE")
@@ -52,6 +53,8 @@ class Runtime:
             return False
         members.append(con_id)
         self._write_private(groups, active_group)
+        if name == active_group:
+            self._publish_active(members)
         return True
 
     def remove(self, group: str) -> bool:
@@ -63,6 +66,8 @@ class Runtime:
             return False
         members.remove(con_id)
         self._write_private(groups, active_group)
+        if name == active_group:
+            self._publish_active(members)
         return True
 
     def show(self, group: str) -> list[int]:
@@ -78,9 +83,11 @@ class Runtime:
         groups, active_group = self._snapshot()
         _existing_group(groups, name)
         if name == active_group:
+            self._publish_active(groups[name])
             return False
         self._write_private(groups, name)
         self._publish_coordination(groups, name)
+        self._publish_active(groups[name])
         return True
 
     def current(self) -> str:
@@ -120,6 +127,17 @@ class Runtime:
         changed = self.state.require("set")({"groups": list(groups), "active_group": active_group})
         if type(changed) is not bool:
             raise TypeError("ROBA state set must return a boolean")
+
+    def _publish_active(self, members: list[int]) -> None:
+        live_value = self.ipc.require("live_con_ids")()
+        if not isinstance(live_value, list) or any(type(item) is not int or item <= 0 for item in live_value):
+            raise TypeError("Sway IPC live_con_ids must return positive integer con_ids")
+        if len(set(live_value)) != len(live_value):
+            raise ValueError("Sway IPC live_con_ids must not contain duplicates")
+        live = set(live_value)
+        result = self.active_members.require("set")([member for member in members if member in live])
+        if result is not None:
+            raise TypeError("active Sway members set must return None")
 
     def _focused_con_id(self) -> int:
         value = self.ipc.require("focused_con_id")()
