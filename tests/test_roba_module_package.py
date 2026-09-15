@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
 import zipfile
 from email.parser import BytesParser
+from pathlib import Path
 
 from dix.modules import first_party_module_path
 

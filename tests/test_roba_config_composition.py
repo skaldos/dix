@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,6 @@ from pydantic import ValidationError
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 from dix.modules import first_party_module_path
-
 
 EXPECTED_DEFAULTS = {
     "daemon_id": "default",
@@ -64,7 +62,7 @@ def test_environment_removes_inherited_roba_values_and_sets_only_roots(
     assert environment["KEEP_ME"] == "yes"
     assert environment["ROBA_RUNTIME_ROOT"] == "~/.roba/runtime"
     assert environment["ROBA_LOGS_ROOT"] == "~/.roba/logs"
-    assert set(key for key in environment if key.startswith("ROBA_")) == {
+    assert {key for key in environment if key.startswith("ROBA_")} == {
         "ROBA_RUNTIME_ROOT",
         "ROBA_LOGS_ROOT",
     }

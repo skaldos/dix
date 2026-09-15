@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-
 _PATH = Path(__file__).parents[1] / "modules/dix/roba/compositions/state/runtime.py"
 _SPEC = importlib.util.spec_from_file_location("dix_roba_state_runtime", _PATH)
 assert _SPEC is not None and _SPEC.loader is not None

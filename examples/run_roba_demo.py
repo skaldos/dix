@@ -7,7 +7,6 @@ from pathlib import Path
 
 from dix.bootstrap import build_launcher
 
-
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_roba.toml"
 

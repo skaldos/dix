@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import pytest
+from roba import ContextApi, daemon_status, start_daemon, stop_daemon
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
 from dix.core.composition import CompositionInstanceSpec
 from dix.modules import first_party_module_path
-from roba import ContextApi, daemon_status, start_daemon, stop_daemon
-
 
 CONTROL_STATE = {
     "control_locator",

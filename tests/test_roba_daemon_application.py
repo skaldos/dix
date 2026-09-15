@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from pathlib import Path
 import shutil
 import tempfile
+from dataclasses import asdict
+from pathlib import Path
 
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec

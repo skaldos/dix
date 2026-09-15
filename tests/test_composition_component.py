@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
-from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
+from dix.core.composition import CompositionInstanceSpec
 from dix.core.module.component import ModuleComponentError
 
 

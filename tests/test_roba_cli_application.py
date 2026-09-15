@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from dix.bootstrap import build_launcher

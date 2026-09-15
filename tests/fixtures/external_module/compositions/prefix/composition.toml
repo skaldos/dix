@@ -1,0 +1,5 @@
+[composition]
+id = "prefix"
+
+[functions.decorate]
+description = "Decorate one value in the external fixture."

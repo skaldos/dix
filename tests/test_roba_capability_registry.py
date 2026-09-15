@@ -4,10 +4,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
-from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
-from dix.core.composition import CompositionInstanceSpec
-from dix.modules import first_party_module_path
 from roba import (
     ContextApi,
     RobaClient,
@@ -16,6 +12,10 @@ from roba import (
     start_daemon,
     stop_daemon,
 )
+
+from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
+from dix.core.composition import CompositionInstanceSpec
+from dix.modules import first_party_module_path
 
 
 def _instance(tmp_path: Path):
@@ -155,7 +155,7 @@ def test_failed_manager_socket_creation_rolls_back_owned_objects(
             "ROBA_LOGS_ROOT": str(config["logs_root"]),
         }
         registry_owner = RobaClient(env=environment, timeout=5).context(
-            locator=f"id:dix.control",
+            locator="id:dix.control",
             control=str(credentials["control_locator"]),
             token=str(credentials["owner_token"]),
         )

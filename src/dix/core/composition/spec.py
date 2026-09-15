@@ -8,9 +8,11 @@ from typing import Any
 from dix.core.module.errors import ModuleSpecError
 from dix.core.module.validation import (
     canonical_file,
-    normalize_local_id as normalize_artifact_local_id,
     normalize_module_id,
     require_contained,
+)
+from dix.core.module.validation import (
+    normalize_local_id as normalize_artifact_local_id,
 )
 
 from .models import (
@@ -79,7 +81,7 @@ def inspect_composition_source(path: Path) -> CompositionSource:
     compositions = _parse_compositions(raw.get("compositions", {}))
     shared_aliases = set(components) & set(compositions)
     if shared_aliases:
-        alias = sorted(shared_aliases)[0]
+        alias = min(shared_aliases)
         raise CompositionSpecError(
             f"dependency alias is used by both components and compositions: {alias}"
         )

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
-
 
 EXPECTED_ROBA_COMMIT = "afde02db17e5a85cb4e8bfebf31ecc6bac61c2a2"
 REPOSITORY = Path(__file__).resolve().parents[2]

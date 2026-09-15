@@ -14,7 +14,6 @@ from roba import RobaClient, TransportError
 
 from dix.bootstrap import build_launcher
 
-
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_roba.toml"
 _TOKEN = __import__("re").compile(r"control_token='([^']+)'")

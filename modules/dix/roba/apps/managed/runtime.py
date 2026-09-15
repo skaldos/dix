@@ -62,7 +62,8 @@ class Runtime:
             cleanup_errors: list[str] = []
             try:
                 self.daemon.require("stop")(**invocation)
-            except Exception as cleanup_error:
+            # Preserve the primary startup failure even if arbitrary teardown code fails.
+            except Exception as cleanup_error:  # noqa: BLE001
                 cleanup_errors.append(f"daemon cleanup: {cleanup_error}")
             if cleanup_errors:
                 raise RuntimeError(

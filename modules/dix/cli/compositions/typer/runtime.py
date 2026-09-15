@@ -42,7 +42,8 @@ class Runtime:
         try:
             application = _build_application(name, targets)
             command = typer.main.get_command(application)
-        except Exception as exc:
+        # The CLI adapter is the error boundary for arbitrary target applications.
+        except Exception as exc:  # noqa: BLE001
             print(f"Error: {exc}", file=sys.stderr)
             return 2
 

@@ -15,7 +15,6 @@ from roba import (
 
 from dix.core.composition import CompositionRuntimeContext
 
-
 CONTROL_CONTEXT_ID = "dix.control"
 ROOT_SOCKET_ID = "admin"
 
@@ -93,14 +92,15 @@ class Runtime:
                 name=ROOT_SOCKET_ID,
                 read=["context"],
             )
-        except Exception as error:
+        # Roll back every partially published external resource for any client failure.
+        except Exception as error:  # noqa: BLE001
             cleanup_errors: list[str] = []
             if root_owner is not None and root_socket_attempted:
                 try:
                     root_owner.socket_delete(socket_id=ROOT_SOCKET_ID)
                 except ResourceNotFound:
                     pass
-                except Exception as cleanup_error:
+                except Exception as cleanup_error:  # noqa: BLE001
                     cleanup_errors.append(f"root socket cleanup: {cleanup_error}")
             if context is not None:
                 try:
@@ -110,7 +110,7 @@ class Runtime:
                         environment,
                         self._timeout(values),
                     ).context_delete(context_id=CONTROL_CONTEXT_ID)
-                except Exception as cleanup_error:
+                except Exception as cleanup_error:  # noqa: BLE001
                     cleanup_errors.append(f"control context cleanup: {cleanup_error}")
             _raise_with_cleanup(error, cleanup_errors)
         assert context is not None
@@ -182,19 +182,20 @@ class Runtime:
                 name=context_id,
                 read=[f"instance:{context_id}"],
             )
-        except Exception as error:
+        # Context creation spans several external calls and therefore owns broad rollback.
+        except Exception as error:  # noqa: BLE001
             cleanup_errors: list[str] = []
             if socket_attempted:
                 try:
                     registry_owner.socket_delete(socket_id=context_id)
                 except ResourceNotFound:
                     pass
-                except Exception as cleanup_error:
+                except Exception as cleanup_error:  # noqa: BLE001
                     cleanup_errors.append(f"manager socket cleanup: {cleanup_error}")
             if instance_created:
                 try:
                     registry_owner.instance_delete(instance_id=context_id)
-                except Exception as cleanup_error:
+                except Exception as cleanup_error:  # noqa: BLE001
                     cleanup_errors.append(f"registry instance cleanup: {cleanup_error}")
             try:
                 _control_client(
@@ -203,7 +204,7 @@ class Runtime:
                     environment,
                     self._timeout(values),
                 ).context_delete(context_id=context_id)
-            except Exception as cleanup_error:
+            except Exception as cleanup_error:  # noqa: BLE001
                 cleanup_errors.append(f"target context cleanup: {cleanup_error}")
             _raise_with_cleanup(error, cleanup_errors)
         assert socket_record is not None

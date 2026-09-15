@@ -1,0 +1,8 @@
+[app]
+id = "consumer"
+
+[compositions.prefix]
+use = "external/demo/prefix"
+
+[functions.run]
+description = "Call one explicitly supplied external composition."

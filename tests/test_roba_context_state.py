@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import dix_roba_state_runtime_test_import as runtime_module
 import pytest
-from dix.core.composition import CompositionRuntimeContext
 from dix_roba_state_test_support import (
     FakeContext,
     FakeControl,
     FakeModels,
 )
 
-import dix_roba_state_runtime_test_import as runtime_module
+from dix.core.composition import CompositionRuntimeContext
 
 Runtime = runtime_module.Runtime
 

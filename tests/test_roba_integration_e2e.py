@@ -4,9 +4,9 @@ import hashlib
 import os
 import re
 import shutil
-import tempfile
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from dix.bootstrap import build_launcher

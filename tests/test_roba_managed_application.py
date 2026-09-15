@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import importlib.util
-from pathlib import Path
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
+from roba import stop_daemon
 
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec, ApplicationRuntimeContext
 from dix.modules import first_party_module_path
-from roba import stop_daemon
-
 
 _RUNTIME_PATH = (
     Path(__file__).resolve().parents[1]

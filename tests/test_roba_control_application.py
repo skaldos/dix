@@ -3,10 +3,11 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from roba import start_daemon, stop_daemon
+
 from dix.core import ApplicationComponent, ModuleComponent, create_core_component_registry
 from dix.core.application import ApplicationInstanceSpec
 from dix.modules import first_party_module_path
-from roba import start_daemon, stop_daemon
 
 
 def _application(tmp_path: Path):

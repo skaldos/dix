@@ -250,7 +250,8 @@ class ApplicationComponent:
             for scope_id, composition_id in reversed(created_compositions):
                 try:
                     self._compositions.destroy_instance(scope_id, composition_id)
-                except Exception as rollback_error:
+                # Runtime teardown is module-owned; preserve every rollback failure.
+                except Exception as rollback_error:  # noqa: BLE001
                     rollback_errors.append(rollback_error)
             suffix = ""
             if rollback_errors:
