@@ -95,6 +95,8 @@ def _cli(home: Path, command: tuple[str, ...], *, focus: int, owner: str) -> sub
             "SWAYSOCK": "",
             "DIX_TEST_FOCUS": str(focus),
             "DIX_TEST_OWNER": owner,
+            "DIX_SWAY_GROUP_STATE_FILE": str(home / "groups.json"),
+            "DIX_SWAY_ACTIVE_MEMBERS_FILE": str(home / "active.txt"),
         },
         text=True,
         capture_output=True,

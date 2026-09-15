@@ -26,6 +26,8 @@ def _environment(home: Path, fake: Path) -> dict[str, str]:
         "PYTHONPATH": os.pathsep.join((str(fake), str(REPOSITORY / "src"))),
         "SWAYSOCK": "deterministic-test-socket",
         "DIX_TEST_FOCUS": "731",
+        "DIX_SWAY_GROUP_STATE_FILE": str(home / "groups.json"),
+        "DIX_SWAY_ACTIVE_MEMBERS_FILE": str(home / "active.txt"),
     }
 
 
@@ -80,7 +82,8 @@ class Connection:
 
         before_groups = _run(launcher, environment, "group", "list")
         _assert_secret_free(before_groups)
-        assert before_groups.returncode != 0
+        assert before_groups.returncode == 0
+        assert before_groups.stdout.strip() == "{}"
         assert not runtime_root.exists()
 
         started = _run(launcher, environment, "runtime", "start")
@@ -121,7 +124,8 @@ class Connection:
         assert after_status.returncode != 0
         after_groups = _run(launcher, environment, "group", "list")
         _assert_secret_free(after_groups)
-        assert after_groups.returncode != 0
+        assert after_groups.returncode == 0
+        assert after_groups.stdout.strip() == "{'work': [731]}"
 
         restarted = _run(launcher, environment, "runtime", "start")
         _assert_secret_free(restarted)
@@ -130,7 +134,7 @@ class Connection:
         empty = _run(launcher, environment, "group", "list")
         _assert_secret_free(empty)
         assert empty.returncode == 0, empty.stderr
-        assert empty.stdout.strip() == "{}"
+        assert empty.stdout.strip() == "{'work': [731]}"
 
         stopped_again = _run(launcher, environment, "runtime", "stop")
         _assert_secret_free(stopped_again)

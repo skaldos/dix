@@ -16,6 +16,7 @@ from dix.bootstrap import build_launcher
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_sway.toml"
+HOT_ENTRY = REPOSITORY / "examples" / "launchers" / "dix_sway_navigation.py"
 
 
 _FAKE_I3IPC = r'''
@@ -69,6 +70,8 @@ def _environment(home: Path, fake: Path, **overrides: str) -> dict[str, str]:
         "HOME": str(home),
         "PYTHONPATH": os.pathsep.join((str(fake), str(REPOSITORY / "src"))),
         "SWAYSOCK": "deterministic-navigation-socket",
+        "DIX_SWAY_GROUP_STATE_FILE": str(home / "groups.json"),
+        "DIX_SWAY_ACTIVE_MEMBERS_FILE": str(home / "active.txt"),
         **overrides,
     }
 
@@ -145,6 +148,21 @@ def _inject_context_state(home: Path, name: str, value: object) -> None:
     context.set(name, value)
 
 
+
+def _context_state(home: Path) -> dict[str, object]:
+    environment = {
+        "ROBA_RUNTIME_ROOT": str(home / ".roba" / "runtime"),
+        "ROBA_LOGS_ROOT": str(home / ".roba" / "logs"),
+    }
+    manager_path = principal_socket("default", "dix.control", "sway", environment)
+    manager = RobaClient(env=environment, timeout=5.0).context(
+        locator=f"unix:{manager_path}", scope="id:sway", token=None,
+    )
+    context = RobaClient(env=environment, timeout=5.0).context(
+        locator=manager.get("context_locator"), token=manager.get("owner_token"),
+    )
+    return dict(context.state())
+
 def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) -> None:
     launcher = build_launcher(SPEC, tmp_path / "dix_sway.py")
     fake = tmp_path / "fake"
@@ -163,6 +181,7 @@ def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) 
             "group",
             "select",
             DIX_SWAY_GROUP_SELECT_GROUP="work",
+            DIX_TEST_LIVE_IDS="1,3",
         )
         assert not runtime_root.exists()
 
@@ -209,9 +228,48 @@ def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) 
             "group",
             "select",
             DIX_SWAY_GROUP_SELECT_GROUP="work",
+            DIX_TEST_LIVE_IDS="1,3",
         )
         assert _value(selected_group) is True
         assert _success(launcher, environment, "group", "current").stdout.strip() == "work"
+        private_state = json.loads(Path(environment["DIX_SWAY_GROUP_STATE_FILE"]).read_text())
+        assert private_state == {"groups": {"work": [1, 3, 99]}, "active_group": "work"}
+        assert Path(environment["DIX_SWAY_ACTIVE_MEMBERS_FILE"]).read_bytes() == b"1 3\n"
+        coordination = _context_state(home)
+        assert coordination["groups"] == ["work"]
+        assert coordination["active_group"] == "work"
+        assert "1" not in json.dumps({"groups": coordination["groups"], "active_group": coordination["active_group"]})
+
+        Path(environment["DIX_SWAY_ACTIVE_MEMBERS_FILE"]).unlink()
+        same_selection = _success(
+            launcher, environment, "group", "select",
+            DIX_SWAY_GROUP_SELECT_GROUP="work", DIX_TEST_LIVE_IDS="1,3",
+        )
+        assert _value(same_selection) is False
+        assert Path(environment["DIX_SWAY_ACTIVE_MEMBERS_FILE"]).read_bytes() == b"1 3\n"
+
+        hot = subprocess.run(
+            [sys.executable, str(HOT_ENTRY), "right"], cwd=REPOSITORY,
+            env={**environment, "DIX_TEST_INITIAL_FOCUS": "1", "DIX_TEST_LIVE_IDS": "1,2,3",
+                 "DIX_TEST_TRANSITIONS": json.dumps({"1:right": 2, "2:right": 3})},
+            text=True, capture_output=True, check=False,
+        )
+        assert hot.returncode == 0, hot.stderr
+        assert json.loads(hot.stdout)["focused_id"] == 3
+
+        projection = Path(environment["DIX_SWAY_ACTIVE_MEMBERS_FILE"])
+        projection.write_bytes(b"1 99\n")
+        stale_hot = subprocess.run(
+            [sys.executable, str(HOT_ENTRY), "left"], cwd=REPOSITORY,
+            env={**environment, "DIX_TEST_INITIAL_FOCUS": "1", "DIX_TEST_LIVE_IDS": "1,2",
+                 "DIX_TEST_TRANSITIONS": json.dumps({"1:left": 2, "2:left": 2})},
+            text=True, capture_output=True, check=False,
+        )
+        assert stale_hot.returncode == 0, stale_hot.stderr
+        stale_result = json.loads(stale_hot.stdout)
+        assert stale_result["stale_ids"] == [99]
+        assert stale_result["focused_id"] == 1 and stale_result["restored"] is True
+        projection.write_bytes(b"1 3\n")
 
         selected_navigation = _success(
             launcher,
@@ -243,7 +301,7 @@ def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) 
             "matched": True,
             "restored": False,
             "visited_ids": [1, 2, 3],
-            "stale_ids": [99],
+            "stale_ids": [],
         }
         assert hit_trace.read_text(encoding="utf-8").splitlines() == [
             "focus right",
@@ -275,7 +333,7 @@ def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) 
             "matched": False,
             "restored": True,
             "visited_ids": [1, 2],
-            "stale_ids": [99],
+            "stale_ids": [],
         }
         assert restore_trace.read_text(encoding="utf-8").splitlines() == [
             "focus left",
@@ -304,8 +362,10 @@ def test_state_routed_sway_navigation_across_launcher_processes(tmp_path: Path) 
 
         _success(launcher, environment, "runtime", "start")
         running = True
-        assert _value(_success(launcher, environment, "group", "list")) == {}
-        assert _success(launcher, environment, "group", "current").stdout.strip() == ""
+        assert _context_state(home) == {}
+        assert _value(_success(launcher, environment, "group", "list")) == {"work": [1, 3, 99]}
+        assert _context_state(home) == {}
+        assert _success(launcher, environment, "group", "current").stdout.strip() == "work"
         assert _success(launcher, environment, "navigation", "current").stdout.strip() == "basic"
         _success(launcher, environment, "runtime", "stop")
         running = False

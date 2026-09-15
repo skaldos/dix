@@ -201,6 +201,8 @@ source = {sway!r}
         "PYTHONPATH": str(fake),
         "SWAYSOCK": "test-sway-socket",
         "DIX_TEST_INITIAL_FOCUS": "731",
+        "DIX_SWAY_GROUP_STATE_FILE": str(home / "groups.json"),
+        "DIX_SWAY_ACTIVE_MEMBERS_FILE": str(home / "active.txt"),
     }
     runtime_running = False
     def run_launcher(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -233,7 +235,9 @@ source = {sway!r}
 
     try:
         require_failure("runtime", "status")
-        require_failure("group", "list")
+        pre_groups = require_success("group", "list")
+        if pre_groups.stdout.strip() != "{}":
+            raise RuntimeError("missing private group state was not empty")
         if runtime_root.exists():
             raise RuntimeError("pre-start inspection created a ROBA runtime root")
 
@@ -273,6 +277,7 @@ source = {sway!r}
             raise RuntimeError(f"unexpected basic navigation: {basic!r}")
 
         process_env["DIX_SWAY_GROUP_SELECT_GROUP"] = "work"
+        process_env["DIX_TEST_LIVE_IDS"] = "1,3"
         require_success("group", "select")
         process_env["DIX_SWAY_NAVIGATION_SELECT_NODE_SELECTOR"] = "group"
         require_success("navigation", "select")
@@ -287,7 +292,7 @@ source = {sway!r}
         grouped = ast.literal_eval(require_success("navigation", "right").stdout.strip())
         if not grouped["matched"] or grouped["visited_ids"] != [1, 2, 3]:
             raise RuntimeError(f"unexpected group navigation: {grouped!r}")
-        if grouped["stale_ids"] != [99]:
+        if grouped["stale_ids"] != []:
             raise RuntimeError(f"stale ID was not exposed: {grouped!r}")
         shown = ast.literal_eval(require_success("group", "show", "--group", "work").stdout.strip())
         if shown != [1, 3, 99]:
@@ -310,17 +315,19 @@ source = {sway!r}
         require_success("runtime", "stop")
         runtime_running = False
         require_failure("runtime", "status")
-        require_failure("group", "list")
+        post_groups = require_success("group", "list")
+        if post_groups.stdout.strip() != "{'work': [1, 3, 99]}":
+            raise RuntimeError("private group state was coupled to ROBA stop")
 
         restarted = require_success("runtime", "start")
         runtime_running = True
         if "context_id" not in restarted.stdout or "sway" not in restarted.stdout:
             raise RuntimeError(f"runtime restart omitted Sway status: {restarted.stdout!r}")
         empty = require_success("group", "list")
-        if empty.stdout.strip() != "{}":
-            raise RuntimeError(f"restart restored stale group state: {empty.stdout!r}")
-        if require_success("group", "current").stdout.strip():
-            raise RuntimeError("restart restored an active Sway group")
+        if empty.stdout.strip() != "{'work': [1, 3, 99]}":
+            raise RuntimeError(f"private group state did not survive ROBA restart: {empty.stdout!r}")
+        if require_success("group", "current").stdout.strip() != "work":
+            raise RuntimeError("private active group did not survive ROBA restart")
         if require_success("navigation", "current").stdout.strip() != "basic":
             raise RuntimeError("restart restored a non-default navigation selector")
         require_success("runtime", "stop")
