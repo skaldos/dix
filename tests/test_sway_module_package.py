@@ -11,7 +11,7 @@ from dix.modules import first_party_module_path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY / "examples" / "launchers" / "dix_sway.toml"
-VERIFY = REPOSITORY / "examples" / "launchers" / "verify_dix_sway_wheel.py"
+VERIFY = REPOSITORY / "examples" / "launchers" / "verify_dix_sway_navigation_wheel.py"
 
 
 def test_sway_module_is_resolvable_and_launcher_spec_builds(tmp_path: Path) -> None:
@@ -37,6 +37,9 @@ def test_sway_wheel_contains_module_and_optional_dependency_only(tmp_path: Path)
         metadata = BytesParser().parsebytes(archive.read(metadata_name))
     assert {
         "dix/_modules/dix/sway/README.md",
+        "dix/_modules/dix/sway/navigation_entry.py",
+        "dix/_modules/dix/sway/compositions/active_members/composition.toml",
+        "dix/_modules/dix/sway/compositions/active_members/runtime.py",
         "dix/_modules/dix/sway/compositions/ipc/composition.toml",
         "dix/_modules/dix/sway/compositions/ipc/runtime.py",
         "dix/_modules/dix/sway/compositions/groups/composition.toml",
@@ -68,4 +71,4 @@ def test_installed_wheel_builds_and_executes_sway_launcher(tmp_path: Path) -> No
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "wheel-sway-launcher=ok" in completed.stdout
+    assert "wheel-sway-navigation=ok" in completed.stdout
