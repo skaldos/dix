@@ -1,8 +1,8 @@
 name = "SwayGroupsState"
 
 [fields.groups]
-type = "object"
-default = {}
+type = "array"
+default = []
 
 [fields.active_group]
 type = "string"
