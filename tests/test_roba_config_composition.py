@@ -34,7 +34,11 @@ def _instance(tmp_path: Path):
     )
 
 
-def test_defaults_and_full_model_set_are_owned_by_one_config_instance(tmp_path: Path) -> None:
+def test_defaults_and_full_model_set_are_owned_by_one_config_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DIX_ROBA_RUNTIME_ROOT", raising=False)
+    monkeypatch.delenv("DIX_ROBA_LOGS_ROOT", raising=False)
     instance = _instance(tmp_path)
     get = instance.api.require("get")
     set_value = instance.api.require("set")
@@ -66,3 +70,23 @@ def test_environment_removes_inherited_roba_values_and_sets_only_roots(
         "ROBA_RUNTIME_ROOT",
         "ROBA_LOGS_ROOT",
     }
+
+
+def test_explicit_dix_environment_overrides_seed_each_config_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DIX_ROBA_RUNTIME_ROOT", "/dix/runtime")
+    monkeypatch.setenv("DIX_ROBA_LOGS_ROOT", "/dix/logs")
+    monkeypatch.setenv("ROBA_RUNTIME_ROOT", "/ignored/runtime")
+    monkeypatch.setenv("ROBA_LOGS_ROOT", "/ignored/logs")
+
+    instance = _instance(tmp_path)
+
+    assert instance.api.require("get")() == {
+        **EXPECTED_DEFAULTS,
+        "runtime_root": "/dix/runtime",
+        "logs_root": "/dix/logs",
+    }
+    environment = instance.api.require("environment")()
+    assert environment["ROBA_RUNTIME_ROOT"] == "/dix/runtime"
+    assert environment["ROBA_LOGS_ROOT"] == "/dix/logs"

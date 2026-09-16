@@ -24,6 +24,17 @@ class Runtime:
         self.context = context
         self.config = config
         self.state = state
+        overrides = {
+            field: value
+            for field, environment_name in (
+                ("runtime_root", "DIX_ROBA_RUNTIME_ROOT"),
+                ("logs_root", "DIX_ROBA_LOGS_ROOT"),
+            )
+            if (value := os.environ.get(environment_name))
+        }
+        if overrides:
+            current = self.get()
+            self.set({**current, **overrides})
 
     def get(self) -> dict[str, object]:
         """Return the complete ROBA daemon configuration."""

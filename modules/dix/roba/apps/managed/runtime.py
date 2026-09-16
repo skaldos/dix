@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 
 from dix.core.application import ApplicationApi, ApplicationRuntimeContext
+
+_DEFAULT_RUNTIME_ROOT = os.environ.get("DIX_ROBA_RUNTIME_ROOT", "~/.roba/runtime")
+_DEFAULT_LOGS_ROOT = os.environ.get("DIX_ROBA_LOGS_ROOT", "~/.roba/logs")
 
 
 class Runtime:
@@ -25,8 +29,8 @@ class Runtime:
         self,
         *,
         daemon_id: str = "default",
-        runtime_root: str = "~/.roba/runtime",
-        logs_root: str = "~/.roba/logs",
+        runtime_root: str = _DEFAULT_RUNTIME_ROOT,
+        logs_root: str = _DEFAULT_LOGS_ROOT,
         timeout: float = 5.0,
     ) -> dict[str, object]:
         """Start one DIX-owned daemon and attach its control registry."""

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from typing import Protocol
 
 from dix.core.application import ApplicationRuntimeContext
+
+_DEFAULT_RUNTIME_ROOT = os.environ.get("DIX_ROBA_RUNTIME_ROOT", "~/.roba/runtime")
+_DEFAULT_LOGS_ROOT = os.environ.get("DIX_ROBA_LOGS_ROOT", "~/.roba/logs")
 
 
 class ControlApi(Protocol):
@@ -30,8 +34,8 @@ class Runtime:
         control_locator: str,
         control_token: str,
         daemon_id: str = "default",
-        runtime_root: str = "~/.roba/runtime",
-        logs_root: str = "~/.roba/logs",
+        runtime_root: str = _DEFAULT_RUNTIME_ROOT,
+        logs_root: str = _DEFAULT_LOGS_ROOT,
         timeout: float = 5.0,
     ) -> object:
         """Attach to a running ROBA daemon and create the DIX control registry."""
@@ -45,8 +49,8 @@ class Runtime:
         self,
         *,
         daemon_id: str = "default",
-        runtime_root: str = "~/.roba/runtime",
-        logs_root: str = "~/.roba/logs",
+        runtime_root: str = _DEFAULT_RUNTIME_ROOT,
+        logs_root: str = _DEFAULT_LOGS_ROOT,
         timeout: float = 5.0,
     ) -> dict[str, object]:
         """Read DIX control credentials through the root socket."""
@@ -62,8 +66,8 @@ class Runtime:
         context_id: str,
         name: str = "",
         daemon_id: str = "default",
-        runtime_root: str = "~/.roba/runtime",
-        logs_root: str = "~/.roba/logs",
+        runtime_root: str = _DEFAULT_RUNTIME_ROOT,
+        logs_root: str = _DEFAULT_LOGS_ROOT,
         timeout: float = 5.0,
     ) -> dict[str, object]:
         """Create one managed context and its scoped manager socket."""
@@ -78,8 +82,8 @@ class Runtime:
         *,
         context_id: str,
         daemon_id: str = "default",
-        runtime_root: str = "~/.roba/runtime",
-        logs_root: str = "~/.roba/logs",
+        runtime_root: str = _DEFAULT_RUNTIME_ROOT,
+        logs_root: str = _DEFAULT_LOGS_ROOT,
         timeout: float = 5.0,
     ) -> dict[str, object]:
         """Read one managed context owner through its manager socket."""
