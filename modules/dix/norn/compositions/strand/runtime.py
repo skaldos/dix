@@ -6,9 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from uuid import uuid4
 
 from dix.core.composition import CompositionRuntimeContext
-from dix.core.element import CORE_ELEMENT_TYPES, ElementSpec
+from dix.core.datamodel import DatamodelComponent, DatamodelError, ModelDefinition, RegisteredModel
+from dix.core.element import (
+    CORE_ELEMENT_TYPES,
+    ElementComponent,
+    ElementProcessor,
+    ElementSpec,
+)
 
 
 class StrandSpecificationError(ValueError):
@@ -24,7 +31,15 @@ class StrandBindingError(RuntimeError):
 
 
 class StrandValueError(ValueError):
-    """Reserved for incompatible values processed at runtime."""
+    """Raised when a value is incompatible with a strand boundary."""
+
+
+class StrandInputValueError(StrandValueError):
+    """Raised when a value is incompatible with the input boundary."""
+
+
+class StrandOutputValueError(StrandValueError):
+    """Raised when a value is incompatible with the output boundary."""
 
 
 @dataclass(frozen=True)
@@ -51,6 +66,13 @@ class StrandSpecification:
     path: Path
 
 
+@dataclass(frozen=True)
+class _BoundBoundary:
+    specification: BoundarySpecification
+    processor: ElementProcessor | None = None
+    model: RegisteredModel | None = None
+
+
 class Runtime:
     """Load and retain one immutable owner-local strand specification."""
 
@@ -59,6 +81,8 @@ class Runtime:
         *,
         context: CompositionRuntimeContext,
         config: Mapping[str, object],
+        datamodel: DatamodelComponent,
+        element: ElementComponent,
     ) -> None:
         self.context = context
         self.config = config
@@ -66,6 +90,79 @@ class Runtime:
             context.config_base_dir,
             config.get("spec"),
         )
+        self._datamodel = datamodel
+        self._input = self._bind_boundary(self.specification.input, element)
+        self._output = self._bind_boundary(self.specification.output, element)
+
+    def process_input(self, value: object) -> object:
+        """Validate and materialize one value against the input boundary."""
+        return self._process(self._input, value, boundary="input")
+
+    def process_output(self, value: object) -> object:
+        """Validate and materialize one value against the output boundary."""
+        return self._process(self._output, value, boundary="output")
+
+    def _bind_boundary(
+        self,
+        specification: BoundarySpecification,
+        element: ElementComponent,
+    ) -> _BoundBoundary:
+        try:
+            if specification.type != "model":
+                return _BoundBoundary(
+                    specification=specification,
+                    processor=element.bind(ElementSpec(specification.type)),
+                )
+            model_spec = specification.model
+            if model_spec is None:  # Defensive invariant; normalization rejects this state.
+                raise StrandBindingError("model boundary has no model specification")
+            definition = ModelDefinition(
+                uid=uuid4(),
+                name=model_spec.name,
+                schema=model_spec.fields,
+            )
+            return _BoundBoundary(
+                specification=specification,
+                model=self._datamodel.register_model(definition),
+            )
+        except StrandBindingError:
+            raise
+        except Exception as exc:
+            raise StrandBindingError(
+                f"cannot bind {specification.type} strand boundary: {exc}"
+            ) from exc
+
+    def _process(
+        self,
+        boundary_spec: _BoundBoundary,
+        value: object,
+        *,
+        boundary: str,
+    ) -> object:
+        if boundary_spec.processor is not None:
+            result = boundary_spec.processor.decode(value)
+            compatible = result.compatible
+            processed = result.value
+            issues: object = result.issues
+        elif boundary_spec.model is not None:
+            try:
+                result = self._datamodel.instantiate(boundary_spec.model, value)  # type: ignore[arg-type]
+            except DatamodelError as exc:
+                self._raise_value_error(boundary, (str(exc),))
+            compatible = result.compatible
+            processed = dict(result.values)
+            issues = result.issues
+        else:  # Defensive invariant; binding rejects this state.
+            raise StrandBindingError(f"{boundary} boundary is not bound")
+
+        if not compatible:
+            self._raise_value_error(boundary, issues)
+        return processed
+
+    @staticmethod
+    def _raise_value_error(boundary: str, issues: object) -> None:
+        error_type = StrandInputValueError if boundary == "input" else StrandOutputValueError
+        raise error_type(f"strand {boundary} value is incompatible: {issues!r}")
 
 
 def _load_strand_specification(base_dir: Path, configured_path: object) -> StrandSpecification:

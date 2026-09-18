@@ -1,2 +1,12 @@
 [composition]
 id = "strand"
+
+[components]
+datamodel = "datamodel"
+element = "element"
+
+[functions.process_input]
+description = "Validate and materialize one value against the strand input boundary."
+
+[functions.process_output]
+description = "Validate and materialize one value against the strand output boundary."

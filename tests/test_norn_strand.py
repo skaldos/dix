@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from types import MappingProxyType
 
@@ -53,10 +55,15 @@ def test_atomic_spec_is_normalized_immutably_without_public_functions(tmp_path: 
     _write_atomic(tmp_path)
     instance = _create(tmp_path)
 
-    assert instance.api.functions() == ()
+    assert {item.id for item in instance.api.functions()} == {
+        "process_input",
+        "process_output",
+    }
     assert instance.runtime.specification.id == "atomic"
     assert instance.runtime.specification.input.type == "string"
     assert instance.runtime.specification.output.type == "integer"
+    assert instance.api.require("process_input")("value") == "value"
+    assert instance.api.require("process_output")(4) == 4
 
 
 def test_model_spec_is_flat_native_and_immutable(tmp_path: Path) -> None:
@@ -161,3 +168,91 @@ def test_spec_and_model_symlink_escapes_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(CompositionComponentError) as captured:
         _create(tmp_path)
     assert "escapes" in str(_root_cause(captured.value))
+
+
+def test_atomic_input_and_output_failures_are_distinct(tmp_path: Path) -> None:
+    _write_atomic(tmp_path)
+    api = _create(tmp_path).api
+
+    with pytest.raises(Exception) as input_error:
+        api.require("process_input")(4)
+    with pytest.raises(Exception) as output_error:
+        api.require("process_output")("four")
+
+    assert type(input_error.value).__name__ == "StrandInputValueError"
+    assert "input" in str(input_error.value)
+    assert type(output_error.value).__name__ == "StrandOutputValueError"
+    assert "output" in str(output_error.value)
+
+
+def test_model_boundaries_return_new_native_dicts_and_report_structure(tmp_path: Path) -> None:
+    (tmp_path / "model.toml").write_text(
+        "name='Pair'\n[fields.name]\ntype='string'\n[fields.count]\ntype='integer'\n"
+    )
+    _write_atomic(
+        tmp_path,
+        "[strand]\nid='pair'\n[input]\ntype='model'\nmodel='model.toml'\n"
+        "[output]\ntype='model'\nmodel='model.toml'\n",
+    )
+    api = _create(tmp_path).api
+    raw = {"name": "alpha", "count": 2}
+
+    first = api.require("process_input")(raw)
+    second = api.require("process_input")(raw)
+    assert first == raw
+    assert type(first) is dict
+    assert first is not raw
+    assert second is not first
+
+    with pytest.raises(Exception, match="missing_field"):
+        api.require("process_input")({"name": "alpha"})
+    with pytest.raises(Exception, match="additional_field"):
+        api.require("process_output")({"name": "alpha", "count": 2, "extra": True})
+    with pytest.raises(Exception, match="incompatible_type"):
+        api.require("process_input")({"name": "alpha", "count": "2"})
+
+
+def test_norn_is_resolvable_from_source() -> None:
+    repository = Path(__file__).resolve().parents[1]
+    assert first_party_module_path("dix/norn") == (repository / "modules/dix/norn").resolve()
+
+
+def test_norn_is_delivered_and_resolvable_from_an_installed_wheel(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[1]
+    output = tmp_path / "wheel"
+    subprocess.run(
+        ["uv", "build", "--wheel", "--no-sources", "--out-dir", str(output)],
+        cwd=repository,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    wheel = next(output.glob("*.whl"))
+    command = (
+        "from dix.modules import first_party_module_path; "
+        "path=first_party_module_path('dix/norn'); "
+        "assert path.name == 'norn'; "
+        "assert (path/'compositions/strand/composition.toml').is_file(); "
+        "print('wheel-norn-module=ok')"
+    )
+    completed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--isolated",
+            "--no-project",
+            "--python",
+            sys.executable,
+            "--with",
+            str(wheel),
+            "python",
+            "-c",
+            command,
+        ],
+        cwd=tmp_path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == "wheel-norn-module=ok\n"
