@@ -152,6 +152,24 @@ class Runtime:
         return f"formatted<{value}>"
 ```
 
+### Bindings gegen den unmittelbaren Owner
+
+Eine spezialisierte Child-Composition kann explizit die Component `composition_owner` anfordern,
+wenn sie einen Callable-Vertrag gegen ihren unmittelbaren Owner binden muss:
+
+```toml
+[components]
+owner = "composition_owner"
+```
+
+Die injizierte Capability bietet `bind_dependency(alias, function_id)` fuer eine lokale
+Composition-Dependency des Owners und `bind_function(function_id)` fuer eine exponierte Function
+des Owners. Beide liefern zunaechst deferred Callables. DIX validiert und finalisiert alle
+Anforderungen atomar, nachdem die Owner-API existiert und bevor der Graph sichtbar wird.
+Root-Nutzung, fehlende oder private Functions und asynchrone Ziele lassen den Graphaufbau
+scheitern. Das ist bewusst keine globale Composition-Suche, Runtime-Registry oder
+Child-Rebinding-Mechanik.
+
 Applications folgen demselben expliziten Muster und koennen Compositions oder weitere
 Applications verbinden. Funktionen von Abhaengigkeiten werden nie automatisch exportiert: Die
 Application muss die gewollte Grenze deklarieren oder selbst implementieren.

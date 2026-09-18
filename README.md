@@ -149,6 +149,23 @@ class Runtime:
         return f"formatted<{value}>"
 ```
 
+### Immediate-owner bindings
+
+A specialized child composition may explicitly request the `composition_owner` component when it
+must bind a callable contract against its immediate owner:
+
+```toml
+[components]
+owner = "composition_owner"
+```
+
+The injected capability offers `bind_dependency(alias, function_id)` for one of the owner's local
+composition dependencies and `bind_function(function_id)` for one of the owner's exposed
+functions. Both return deferred callables. DIX validates and finalizes all requests atomically
+after the owner API exists and before the graph becomes visible. Root use, missing or private
+functions, and asynchronous targets fail graph construction. This is deliberately not a global
+composition lookup, runtime registry, or child-rebinding mechanism.
+
 Applications use the same explicit pattern and can combine compositions or other applications.
 Dependency functions are not exported automatically: the application must declare or implement
 the boundary it intends to expose.

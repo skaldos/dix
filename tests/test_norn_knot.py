@@ -344,3 +344,87 @@ def test_knot_cannot_be_created_as_a_root_without_an_owner(tmp_path: Path) -> No
         )
 
     assert compositions.instances(scope_id="test") == ()
+
+
+def test_owner_preprocesses_and_routes_two_private_knots(tmp_path: Path) -> None:
+    module = tmp_path / "multi"
+    _write_composition(
+        module,
+        "client_colors",
+        body=(
+            '[composition]\nid = "client_colors"\n'
+            "[functions.execute]\n"
+        ),
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            "    def execute(self, value): return f'processed:{value}'\n"
+        ),
+    )
+    owner_root = _write_composition(
+        module,
+        "owner",
+        body="""[composition]
+id = "owner"
+[compositions.client_colors]
+use = "test/multi/client_colors"
+[compositions.first_knot]
+use = "dix/norn/knot"
+config = { model = "first.toml" }
+[compositions.second_knot]
+use = "dix/norn/knot"
+config = { model = "second.toml" }
+[functions.route]
+[functions.set_first]
+[functions.set_second]
+""",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config, client_colors, first_knot, second_knot):\n"
+            "        self.knots = {'first': first_knot, 'second': second_knot}\n"
+            "    def route(self, selected, raw_value):\n"
+            "        prepared = {selected: raw_value}\n"
+            "        result = self.knots[selected].require('execute')(prepared)\n"
+            "        return {'selected': selected, 'result': result[selected]}\n"
+            "    def set_first(self, value): return f'first:{value}'\n"
+            "    def set_second(self, value): return f'second:{value}'\n"
+        ),
+    )
+    (owner_root / "first.toml").write_text(
+        """[knot]
+id = "first"
+[fields.first]
+strand = "client_colors"
+handler = "set_first"
+"""
+    )
+    (owner_root / "second.toml").write_text(
+        """[knot]
+id = "second"
+[fields.second]
+strand = "client_colors"
+handler = "set_second"
+"""
+    )
+    modules, compositions = _components()
+    modules.load_module(module, module_id="test/multi")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("owner", "test/multi/owner", {}, tmp_path),
+        owner_scope_id="multi-test",
+    )
+
+    assert instance.api.require("route")("first", "raw") == {
+        "selected": "first",
+        "result": "first:processed:raw",
+    }
+    assert instance.api.require("route")("second", "other") == {
+        "selected": "second",
+        "result": "second:processed:other",
+    }
+    assert {item.id for item in instance.api.functions()} == {
+        "route",
+        "set_first",
+        "set_second",
+    }
+    with pytest.raises(Exception, match="function is not declared: execute"):
+        instance.api.require("execute")
