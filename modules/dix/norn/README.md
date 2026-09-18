@@ -11,3 +11,7 @@ configuration base and cannot escape it.
 boundaries use DIX elements; flat model boundaries use DIX datamodels and return detached native
 dictionaries. Norn owns structural compatibility only. A composing domain strand owns its
 `execute` operation and every domain error.
+
+`dix/norn/knot` loads one owner-local ordered Knot model. A Knot model binds known input fields to
+flat local Strand and handler names; execution is added separately and does not introduce a global
+registry or graph lookup.
