@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,14 @@ class KnotSpecificationError(ValueError):
 
 class KnotPathError(KnotSpecificationError):
     """Raised when an owner-local Knot model path is invalid."""
+
+
+class KnotBindingError(RuntimeError):
+    """Raised when explicit local Strand or handler bindings are invalid."""
+
+
+class KnotInputError(ValueError):
+    """Raised when a Knot execution input is not a mapping."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +55,35 @@ class Runtime:
             context.config_base_dir,
             config.get("model"),
         )
+
+    def execute(
+        self,
+        value: object,
+        strands: Mapping[str, Callable[[object], object]],
+        handlers: Mapping[str, Callable[[object], object]],
+    ) -> dict[str, object]:
+        """Execute present known fields through their bound Strand and handler."""
+        if not isinstance(value, Mapping):
+            raise KnotInputError("knot input must be a mapping")
+        strand_bindings = _validate_bindings(strands, label="strand")
+        handler_bindings = _validate_bindings(handlers, label="handler")
+        for field in self.specification.fields:
+            if field.strand not in strand_bindings:
+                raise KnotBindingError(
+                    f"knot field '{field.name}' references missing strand binding: {field.strand}"
+                )
+            if field.handler not in handler_bindings:
+                raise KnotBindingError(
+                    f"knot field '{field.name}' references missing handler binding: {field.handler}"
+                )
+
+        results: dict[str, object] = {}
+        for field in self.specification.fields:
+            if field.name not in value:
+                continue
+            processed = strand_bindings[field.strand](value[field.name])
+            results[field.name] = handler_bindings[field.handler](processed)
+        return results
 
 
 def _load_knot_specification(base_dir: Path, configured_path: object) -> KnotSpecification:
@@ -123,3 +161,19 @@ def _require_non_empty_string(value: object, *, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise KnotSpecificationError(f"{label} must be a non-empty string")
     return value.strip()
+
+
+def _validate_bindings(value: object, *, label: str) -> dict[str, Callable[[object], object]]:
+    if not isinstance(value, Mapping):
+        raise KnotBindingError(f"knot {label} bindings must be a mapping")
+    result: dict[str, Callable[[object], object]] = {}
+    for raw_name, binding in value.items():
+        if not isinstance(raw_name, str) or not raw_name.isidentifier():
+            raise KnotBindingError(f"knot {label} binding names must be flat identifiers")
+        if not callable(binding):
+            raise KnotBindingError(f"knot {label} binding is not callable: {raw_name}")
+        call_method = type(binding).__dict__.get("__call__")
+        if inspect.iscoroutinefunction(binding) or inspect.iscoroutinefunction(call_method):
+            raise KnotBindingError(f"knot {label} binding must be synchronous: {raw_name}")
+        result[raw_name] = binding
+    return result

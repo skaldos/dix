@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -50,11 +51,11 @@ def _root_cause(error: BaseException) -> BaseException:
     return current
 
 
-def test_knot_model_retains_declared_field_order_without_functions(tmp_path: Path) -> None:
+def test_knot_model_retains_declared_field_order(tmp_path: Path) -> None:
     path = _write_model(tmp_path)
     instance = _create(tmp_path)
 
-    assert instance.api.functions() == ()
+    assert {item.id for item in instance.api.functions()} == {"execute"}
     assert instance.runtime.specification.id == "theme"
     assert instance.runtime.specification.path == path
     assert tuple(field.name for field in instance.runtime.specification.fields) == (
@@ -63,6 +64,117 @@ def test_knot_model_retains_declared_field_order_without_functions(tmp_path: Pat
     )
     assert instance.runtime.specification.fields[0].strand == "client_colors"
     assert instance.runtime.specification.fields[0].handler == "set_focused"
+
+
+def test_execute_uses_model_order_and_ignores_missing_and_unknown_fields(tmp_path: Path) -> None:
+    _write_model(tmp_path)
+    execute = _create(tmp_path).api.require("execute")
+    calls: list[tuple[str, object]] = []
+
+    def strand(value: object) -> object:
+        calls.append(("strand", value))
+        return f"processed:{value}"
+
+    def focused(value: object) -> object:
+        calls.append(("focused", value))
+        return "focused-result"
+
+    def urgent(value: object) -> object:
+        calls.append(("urgent", value))
+        return "urgent-result"
+
+    result = execute(
+        {"unknown": 9, "urgent": "u", "focused": "f"},
+        {"client_colors": strand, "unused": lambda value: value},
+        {
+            "set_urgent": urgent,
+            "set_focused": focused,
+            "unused": lambda value: value,
+        },
+    )
+
+    assert result == {"focused": "focused-result", "urgent": "urgent-result"}
+    assert calls == [
+        ("strand", "f"),
+        ("focused", "processed:f"),
+        ("strand", "u"),
+        ("urgent", "processed:u"),
+    ]
+    assert execute({}, {"client_colors": strand}, {"set_focused": focused, "set_urgent": urgent}) == {}
+
+
+def test_execute_validates_all_bindings_before_first_call(tmp_path: Path) -> None:
+    _write_model(tmp_path)
+    execute = _create(tmp_path).api.require("execute")
+    calls: list[object] = []
+
+    with pytest.raises(Exception, match="missing handler binding: set_urgent") as captured:
+        execute(
+            {"focused": "f"},
+            {"client_colors": lambda value: calls.append(value)},
+            {"set_focused": lambda value: calls.append(value)},
+        )
+    assert type(captured.value).__name__ == "KnotBindingError"
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "value,strands,handlers,match",
+    [
+        ([], {}, {}, "input must be a mapping"),
+        ({}, [], {}, "strand bindings must be a mapping"),
+        ({}, {}, [], "handler bindings must be a mapping"),
+        ({}, {"bad.name": lambda value: value}, {}, "flat identifiers"),
+        ({}, {"client_colors": object()}, {}, "not callable"),
+    ],
+)
+def test_execute_rejects_invalid_input_or_binding_tables(
+    tmp_path: Path,
+    value: object,
+    strands: object,
+    handlers: object,
+    match: str,
+) -> None:
+    _write_model(tmp_path)
+    execute = _create(tmp_path).api.require("execute")
+    with pytest.raises(Exception, match=match):
+        execute(value, strands, handlers)
+
+
+def test_execute_rejects_async_bindings_before_calls(tmp_path: Path) -> None:
+    _write_model(tmp_path)
+    execute = _create(tmp_path).api.require("execute")
+
+    async def async_strand(value: object) -> object:
+        return value
+
+    with pytest.raises(Exception, match="must be synchronous") as captured:
+        execute(
+            {"focused": "f"},
+            {"client_colors": async_strand},
+            {"set_focused": lambda value: value, "set_urgent": lambda value: value},
+        )
+    assert type(captured.value).__name__ == "KnotBindingError"
+
+
+def test_execute_preserves_callable_errors_and_stops(tmp_path: Path) -> None:
+    _write_model(tmp_path)
+    execute = _create(tmp_path).api.require("execute")
+    expected = LookupError("domain failure")
+    calls: list[str] = []
+
+    def fail(value: object) -> Any:
+        calls.append(f"focused:{value}")
+        raise expected
+
+    with pytest.raises(LookupError) as captured:
+        execute(
+            {"focused": "f", "urgent": "u"},
+            {"client_colors": lambda value: value},
+            {"set_focused": fail, "set_urgent": lambda value: calls.append("urgent")},
+        )
+    assert captured.value is expected
+    assert calls == ["focused:f"]
 
 
 @pytest.mark.parametrize(

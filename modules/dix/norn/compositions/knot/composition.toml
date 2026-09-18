@@ -1,2 +1,5 @@
 [composition]
 id = "knot"
+
+[functions.execute]
+description = "Execute known input fields through explicitly bound Strands and handlers."
