@@ -1,7 +1,12 @@
 """Primitive, renderer-independent dix capabilities."""
 
 from .application import ApplicationComponent, ApplicationComponentError
-from .composition import CompositionComponent, CompositionComponentError
+from .composition import (
+    CompositionComponent,
+    CompositionComponentError,
+    CompositionOwnerBindingError,
+    CompositionOwnerComponent,
+)
 from .datamodel import (
     DatamodelComponent,
     DatamodelError,
@@ -46,6 +51,8 @@ __all__ = [
     "ComponentScope",
     "CompositionComponent",
     "CompositionComponentError",
+    "CompositionOwnerBindingError",
+    "CompositionOwnerComponent",
     "DatamodelComponent",
     "DatamodelError",
     "ElementBinding",

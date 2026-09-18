@@ -23,6 +23,7 @@ from .models import (
     CompositionSource,
     LoadedCompositionDefinition,
 )
+from .owner import CompositionOwnerBindingError, CompositionOwnerComponent
 from .runtime import CompositionApi, CompositionRuntimeError
 from .spec import (
     CompositionSpecError,
@@ -45,6 +46,8 @@ __all__ = [
     "CompositionFunctionSpec",
     "CompositionInstance",
     "CompositionInstanceSpec",
+    "CompositionOwnerBindingError",
+    "CompositionOwnerComponent",
     "CompositionRuntimeContext",
     "CompositionRuntimeError",
     "CompositionSource",

@@ -129,6 +129,7 @@ def test_runtime_control_components_are_shared_and_registered_explicitly() -> No
     assert registry.ids() == (
         "application",
         "composition",
+        "composition_owner",
         "datamodel",
         "element",
         "module",

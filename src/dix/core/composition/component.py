@@ -21,6 +21,7 @@ from .models import (
     CompositionRuntimeContext,
     LoadedCompositionDefinition,
 )
+from .owner import CompositionOwnerComponent, _CompositionOwnerTarget
 from .runtime import (
     CompositionApi,
     CompositionRuntimeError,
@@ -215,16 +216,25 @@ class CompositionComponent:
             config: Mapping[str, Any],
             config_base_dir: Path,
             parent_instance_id: str | None,
+            owner_target: _CompositionOwnerTarget | None,
         ) -> CompositionInstance:
             loaded_definition = self._require_loaded_definition(definition_id)
             definition = loaded_definition.definition
             component_scope = self._components.create_scope(
                 f"composition:{owner_scope}:{instance_id}"
             )
+            target = _CompositionOwnerTarget()
             child_apis: dict[str, CompositionApi] = {}
             injected: dict[str, object] = {}
             for alias, component_id in sorted(definition.components.items()):
-                injected[alias] = component_scope.require(component_id, object)
+                component = component_scope.require(component_id, object)
+                if isinstance(component, CompositionOwnerComponent):
+                    if owner_target is None:
+                        raise CompositionRuntimeError(
+                            "composition owner capability requires an immediate composition owner"
+                        )
+                    component._attach(owner_target)
+                injected[alias] = component
             for alias, dependency in sorted(definition.compositions.items()):
                 child_id = f"{instance_id}/{alias}"
                 child = build(
@@ -233,6 +243,7 @@ class CompositionComponent:
                     dict(dependency.config),
                     definition.composition_root,
                     instance_id,
+                    target,
                 )
                 child_apis[alias] = child.api
                 injected[alias] = child.api
@@ -254,6 +265,7 @@ class CompositionComponent:
                     **injected,
                 )
                 api = create_api(definition, runtime, child_apis)
+                target.finalize(child_apis, api)
             except CompositionRuntimeError:
                 raise
             except Exception as exc:
@@ -280,6 +292,7 @@ class CompositionComponent:
                 spec.id,
                 dict(spec.config),
                 spec.config_base_dir,
+                None,
                 None,
             )
         except Exception as exc:

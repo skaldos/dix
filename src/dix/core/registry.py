@@ -125,11 +125,19 @@ def create_core_component_registry() -> ComponentRegistry:
     """Build the provider registry for the primitive core capabilities."""
     from .application import ApplicationComponent
     from .composition import CompositionComponent
+    from .composition.owner import CompositionOwnerComponent
     from .datamodel import DatamodelComponent
     from .element import ElementComponent
     from .module.component import ModuleComponent
 
     registry = ComponentRegistry()
+    registry.register_provider(
+        ComponentProvider(
+            id="composition_owner",
+            lifetime="composition",
+            create=lambda scope: CompositionOwnerComponent(),
+        )
+    )
     registry.register_provider(
         ComponentProvider(
             id="element",

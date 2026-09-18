@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
-from dix.core.composition import CompositionInstanceSpec
+from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
 from dix.core.module.component import ModuleComponentError
 
 
@@ -279,3 +279,141 @@ use = "acme/base/item"
         ("component", "model", "datamodel"),
         ("composition", "base", "acme/base/item"),
     ]
+
+
+def write_owner_binding_module(
+    root: Path,
+    *,
+    dependency_alias: str = "target",
+    owner_function: str = "ping",
+    async_owner_function: bool = False,
+) -> None:
+    write_composition(
+        root,
+        "binder",
+        body="""[composition]
+id = "binder"
+[components]
+owner = "composition_owner"
+[functions.call]
+""",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config, owner):\n"
+            f"        self.dependency = owner.bind_dependency({dependency_alias!r}, 'ping')\n"
+            f"        self.owner_function = owner.bind_function({owner_function!r})\n"
+            "    def call(self, value):\n"
+            "        return self.dependency(value), self.owner_function(value)\n"
+        ),
+    )
+    write_composition(
+        root,
+        "target",
+        body='[composition]\nid = "target"\n[functions.ping]\n',
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            "    def ping(self, value): return f'dependency:{value}'\n"
+        ),
+    )
+    owner_method = (
+        "    async def ping(self, value): return f'owner:{value}'\n"
+        if async_owner_function
+        else "    def ping(self, value): return f'owner:{value}'\n"
+    )
+    write_composition(
+        root,
+        "owner",
+        body="""[composition]
+id = "owner"
+[compositions.binder]
+use = "acme/owner/binder"
+[compositions.target]
+use = "acme/owner/target"
+[functions.run]
+[functions.ping]
+""",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config, binder, target):\n"
+            "        self.binder = binder\n"
+            "    def run(self, value): return self.binder.require('call')(value)\n"
+            + owner_method
+        ),
+    )
+
+
+def test_immediate_owner_capability_finalizes_dependency_and_function_bindings(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "owner"
+    write_owner_binding_module(module)
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/owner")
+
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("owner", "acme/owner/owner", {}, tmp_path),
+        owner_scope_id="test",
+    )
+
+    assert instance.api.require("run")("value") == (
+        "dependency:value",
+        "owner:value",
+    )
+    assert len(compositions.instances(scope_id="test")) == 3
+    compositions.destroy_instance("test", "owner")
+    assert compositions.instances(scope_id="test") == ()
+
+
+def test_composition_owner_capability_requires_an_immediate_owner(tmp_path: Path) -> None:
+    module = tmp_path / "root"
+    write_composition(
+        module,
+        "root",
+        body='[composition]\nid = "root"\n[components]\nowner = "composition_owner"\n',
+        runtime="class Runtime:\n    def __init__(self, *, context, config, owner): pass\n",
+    )
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/root")
+
+    with pytest.raises(CompositionComponentError, match="requires an immediate"):
+        compositions.create_instance(
+            CompositionInstanceSpec("root", "acme/root/root", {}, tmp_path),
+            owner_scope_id="test",
+        )
+
+    assert compositions.instances(scope_id="test") == ()
+
+
+@pytest.mark.parametrize(
+    ("dependency_alias", "owner_function", "async_owner_function", "match"),
+    [
+        ("missing", "ping", False, "does not declare composition dependency alias"),
+        ("target", "private_ping", False, "undeclared owner function"),
+        ("target", "ping", True, "must be synchronous: owner function ping"),
+    ],
+)
+def test_invalid_immediate_owner_bindings_abort_the_staged_graph(
+    tmp_path: Path,
+    dependency_alias: str,
+    owner_function: str,
+    async_owner_function: bool,
+    match: str,
+) -> None:
+    module = tmp_path / "owner"
+    write_owner_binding_module(
+        module,
+        dependency_alias=dependency_alias,
+        owner_function=owner_function,
+        async_owner_function=async_owner_function,
+    )
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/owner")
+
+    with pytest.raises(CompositionComponentError, match=match):
+        compositions.create_instance(
+            CompositionInstanceSpec("owner", "acme/owner/owner", {}, tmp_path),
+            owner_scope_id="test",
+        )
+
+    assert compositions.instances(scope_id="test") == ()
