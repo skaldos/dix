@@ -13,6 +13,10 @@ dictionaries. Norn owns structural compatibility only. A composing domain strand
 `execute` operation and every domain error.
 
 `dix/norn/knot` loads one owner-local ordered Knot model. A Knot model binds known input fields to
-flat local Strand and handler names. `execute` receives those synchronous bindings explicitly,
-ignores unknown input fields, and invokes only present declared fields in model order. It does not
-introduce a global registry or graph lookup.
+flat local Strand and handler names. During staged graph construction, each Strand name resolves
+to the same-named composition dependency of the immediate owner and its exposed synchronous
+`execute`; each handler name resolves to an exposed synchronous function of that owner.
+`knot.execute(value)` therefore needs no second callable table. It ignores unknown input fields and
+invokes only present declared fields in model order. Root use, missing bindings, private methods
+and asynchronous targets fail before the graph becomes visible. This is an immediate-owner
+capability, not a global registry or graph lookup.

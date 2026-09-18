@@ -1,5 +1,8 @@
 [composition]
 id = "knot"
 
+[components]
+owner = "composition_owner"
+
 [functions.execute]
-description = "Execute known input fields through explicitly bound Strands and handlers."
+description = "Execute known input fields through immediate-owner Strands and handlers."
