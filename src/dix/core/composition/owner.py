@@ -57,6 +57,7 @@ class CompositionOwnerComponent:
     ) -> Callable[..., object]:
         """Bind one exposed function from an immediate-owner dependency alias."""
         target = self._require_target()
+        target.register(self)
         request = _BindingRequest(
             kind="dependency",
             name=_require_identifier(alias, label="composition dependency alias"),
@@ -64,12 +65,12 @@ class CompositionOwnerComponent:
             target=_DeferredCallable(f"dependency {alias}.{function_id}"),
         )
         self._requests.append(request)
-        target.register(self)
         return request.target
 
     def bind_function(self, function_id: str) -> Callable[..., object]:
         """Bind one exposed function from the immediate owner's effective API."""
         target = self._require_target()
+        target.register(self)
         normalized = _require_identifier(function_id, label="composition function id")
         request = _BindingRequest(
             kind="function",
@@ -78,7 +79,6 @@ class CompositionOwnerComponent:
             target=_DeferredCallable(f"owner function {normalized}"),
         )
         self._requests.append(request)
-        target.register(self)
         return request.target
 
     def _attach(self, target: _CompositionOwnerTarget) -> None:
@@ -138,8 +138,13 @@ class _CompositionOwnerTarget:
 
     def __init__(self) -> None:
         self._capabilities: list[CompositionOwnerComponent] = []
+        self._finalized = False
 
     def register(self, capability: CompositionOwnerComponent) -> None:
+        if self._finalized:
+            raise CompositionOwnerBindingError(
+                "composition owner target is already finalized"
+            )
         if capability not in self._capabilities:
             self._capabilities.append(capability)
 
@@ -148,6 +153,10 @@ class _CompositionOwnerTarget:
         dependencies: Mapping[str, CompositionApi],
         owner_api: CompositionApi,
     ) -> None:
+        if self._finalized:
+            raise CompositionOwnerBindingError(
+                "composition owner target is already finalized"
+            )
         prepared = tuple(
             binding
             for capability in self._capabilities
@@ -155,6 +164,7 @@ class _CompositionOwnerTarget:
         )
         for target, function in prepared:
             target.bind(function)
+        self._finalized = True
 
 
 def _require_identifier(value: object, *, label: str) -> str:

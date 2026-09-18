@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from dix.core import CompositionComponent, ModuleComponent, create_core_component_registry
-from dix.core.composition import CompositionComponentError, CompositionInstanceSpec
+from dix.core.composition import (
+    CompositionComponentError,
+    CompositionInstanceSpec,
+    CompositionOwnerBindingError,
+)
 from dix.core.module.component import ModuleComponentError
 
 
@@ -300,6 +304,7 @@ owner = "composition_owner"
         runtime=(
             "class Runtime:\n"
             "    def __init__(self, *, context, config, owner):\n"
+            "        self.owner = owner\n"
             f"        self.dependency = owner.bind_dependency({dependency_alias!r}, 'ping')\n"
             f"        self.owner_function = owner.bind_function({owner_function!r})\n"
             "    def call(self, value):\n"
@@ -339,6 +344,7 @@ use = "acme/owner/target"
             "        self.binder = binder\n"
             "    def run(self, value): return self.binder.require('call')(value)\n"
             + owner_method
+            + "    def private_ping(self, value): return f'private:{value}'\n"
         ),
     )
 
@@ -363,6 +369,130 @@ def test_immediate_owner_capability_finalizes_dependency_and_function_bindings(
     assert len(compositions.instances(scope_id="test")) == 3
     compositions.destroy_instance("test", "owner")
     assert compositions.instances(scope_id="test") == ()
+
+
+@pytest.mark.parametrize(
+    ("binding", "arguments"),
+    [
+        ("bind_function", ("ping",)),
+        ("bind_dependency", ("target", "ping")),
+    ],
+)
+def test_finalized_owner_target_rejects_late_bindings_without_mutation(
+    tmp_path: Path,
+    binding: str,
+    arguments: tuple[str, ...],
+) -> None:
+    module = tmp_path / "owner"
+    write_owner_binding_module(module)
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/owner")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("owner", "acme/owner/owner", {}, tmp_path),
+        owner_scope_id="test",
+    )
+    binder = compositions.require_instance("test", "owner/binder")
+    capability = binder.runtime.owner
+    target = capability._target
+    request_count = len(capability._requests)
+    capability_count = len(target._capabilities)
+    returned = None
+
+    with pytest.raises(CompositionOwnerBindingError, match="already finalized"):
+        returned = getattr(capability, binding)(*arguments)
+
+    assert returned is None
+    assert len(capability._requests) == request_count
+    assert len(target._capabilities) == capability_count
+    assert instance.api.require("run")("after") == (
+        "dependency:after",
+        "owner:after",
+    )
+
+
+def test_empty_finalized_owner_target_rejects_late_bindings(tmp_path: Path) -> None:
+    module = tmp_path / "empty-owner"
+    write_composition(
+        module,
+        "binder",
+        body="""[composition]
+id = "binder"
+[components]
+owner = "composition_owner"
+""",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config, owner): self.owner = owner\n"
+        ),
+    )
+    write_composition(
+        module,
+        "target",
+        body='[composition]\nid = "target"\n[functions.ping]\n',
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config): pass\n"
+            "    def ping(self, value): return value\n"
+        ),
+    )
+    write_composition(
+        module,
+        "owner",
+        body="""[composition]
+id = "owner"
+[compositions.binder]
+use = "acme/empty-owner/binder"
+[compositions.target]
+use = "acme/empty-owner/target"
+[functions.ping]
+""",
+        runtime=(
+            "class Runtime:\n"
+            "    def __init__(self, *, context, config, binder, target): pass\n"
+            "    def ping(self, value): return value\n"
+        ),
+    )
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/empty-owner")
+    compositions.create_instance(
+        CompositionInstanceSpec("owner", "acme/empty-owner/owner", {}, tmp_path),
+        owner_scope_id="test",
+    )
+    binder = compositions.require_instance("test", "owner/binder")
+    capability = binder.runtime.owner
+    target = capability._target
+
+    assert capability._requests == []
+    assert target._capabilities == []
+    with pytest.raises(CompositionOwnerBindingError, match="already finalized"):
+        capability.bind_function("ping")
+    with pytest.raises(CompositionOwnerBindingError, match="already finalized"):
+        capability.bind_dependency("target", "ping")
+    assert capability._requests == []
+    assert target._capabilities == []
+
+
+def test_owner_target_rejects_double_finalization_without_changing_bindings(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "owner"
+    write_owner_binding_module(module)
+    modules, compositions = components()
+    modules.load_module(module, module_id="acme/owner")
+    instance = compositions.create_instance(
+        CompositionInstanceSpec("owner", "acme/owner/owner", {}, tmp_path),
+        owner_scope_id="test",
+    )
+    binder = compositions.require_instance("test", "owner/binder")
+    target = binder.runtime.owner._target
+
+    with pytest.raises(CompositionOwnerBindingError, match="already finalized"):
+        target.finalize({}, instance.api)
+
+    assert instance.api.require("run")("after") == (
+        "dependency:after",
+        "owner:after",
+    )
 
 
 def test_composition_owner_capability_requires_an_immediate_owner(tmp_path: Path) -> None:
@@ -408,7 +538,12 @@ def test_invalid_immediate_owner_bindings_abort_the_staged_graph(
         async_owner_function=async_owner_function,
     )
     modules, compositions = components()
-    modules.load_module(module, module_id="acme/owner")
+    loaded = modules.load_module(module, module_id="acme/owner")
+
+    if owner_function == "private_ping":
+        owner = loaded.compositions["acme/owner/owner"]
+        assert callable(owner.runtime_type.private_ping)
+        assert "private_ping" not in owner.definition.functions
 
     with pytest.raises(CompositionComponentError, match=match):
         compositions.create_instance(
